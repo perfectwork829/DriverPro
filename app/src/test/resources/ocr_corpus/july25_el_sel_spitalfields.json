@@ -1,0 +1,8 @@
+{
+  "id": "july25_el_sel_spitalfields",
+  "pickup_postcode": "E1",
+  "drop_postcode": "SE1",
+  "pickup_miles": 1.0,
+  "trip_miles": 1.9,
+  "must_score": true
+}

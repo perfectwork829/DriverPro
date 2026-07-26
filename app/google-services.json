@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1000939663072",
+    "project_id": "driverpro-e2c30",
+    "storage_bucket": "driverpro-e2c30.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1000939663072:android:2fc22cb17e8537a2d96a85",
+        "android_client_info": {
+          "package_name": "com.driver.pro"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCROiPbk22Cg9sTWfBJbGjf0B5t4f9AW4s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

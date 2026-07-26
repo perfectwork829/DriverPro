@@ -1,0 +1,183 @@
+package com.driver.pro.ui.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.driver.pro.BuildConfig
+import com.driver.pro.RideRequest
+import com.driver.pro.getRideRequestArray
+import com.driver.pro.getToken
+import com.driver.pro.network.loadRecentRideRequest
+import com.driver.pro.ui.components.RideRequestCard
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+
+fun showFilter(filterIndex: Int): String {
+    val filterList = listOf("All", "Accepted Only")
+    return filterList.getOrElse(filterIndex) { "Unknown" }
+}
+
+
+@Composable
+fun HistoryScreen() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+
+    val rideRequestsState = remember { mutableStateOf<List<RideRequest>>(emptyList()) }
+    val isLoading = remember { mutableStateOf(true) }
+    val loadError = remember { mutableStateOf<String?>(null) }
+
+    fun loadHistory() {
+        scope.launch {
+            isLoading.value = true
+            loadError.value = null
+            val local = withContext(Dispatchers.IO) {
+                getRideRequestArray(context, "RIDE-REQUESTS")?.toList().orEmpty()
+            }
+            val jwt = getToken(context, "JWT_TOKEN")
+            if (jwt.isNullOrBlank()) {
+                rideRequestsState.value = local
+                if (local.isEmpty()) {
+                    loadError.value = "Not signed in — log in to load server history."
+                }
+                isLoading.value = false
+                return@launch
+            }
+            val apiResult = withContext(Dispatchers.IO) {
+                loadRecentRideRequest(context, jwt)
+            }
+            apiResult.fold(
+                onSuccess = { fromApi ->
+                    // Local OCR debug entries never reach the server; always keep them visible for diagnostics.
+                    val localDebug = local.filter { it.raw_text.startsWith("OCR debug", ignoreCase = true) }
+                    rideRequestsState.value = if (fromApi.isNotEmpty()) localDebug + fromApi else local
+                },
+                onFailure = { e ->
+                    rideRequestsState.value = local
+                    if (local.isEmpty()) {
+                        loadError.value = e.message ?: "Could not load history"
+                    }
+                },
+            )
+            isLoading.value = false
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        loadHistory()
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                loadHistory()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val mFilter = remember {
+        mutableIntStateOf(0)
+    }
+
+    val filteredRideRequest = if (mFilter.value == 1) {
+        rideRequestsState.value
+            .filter { it.acceptedOrRejected == 1 }
+            .sortedByDescending { it.id }
+    } else {
+        // OCR debug entries first (newest at top), then normal history by id.
+        val debug = rideRequestsState.value
+            .filter { it.raw_text.startsWith("OCR debug", ignoreCase = true) }
+            .sortedByDescending { it.created_at }
+        val rest = rideRequestsState.value
+            .filter { !it.raw_text.startsWith("OCR debug", ignoreCase = true) }
+            .sortedByDescending { it.id }
+        debug + rest
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = "History (v${BuildConfig.VERSION_NAME})",
+                style = MaterialTheme.typography.headlineLarge,
+            )
+
+            Button(
+                onClick = {
+                    mFilter.intValue = 1 - mFilter.intValue
+                },
+                modifier = Modifier.padding(2.dp),
+            ) {
+                Text(showFilter(mFilter.intValue))
+            }
+        }
+
+        when {
+            isLoading.value -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+            loadError.value != null && filteredRideRequest.isEmpty() -> {
+                Text(
+                    text = loadError.value.orEmpty(),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            filteredRideRequest.isEmpty() -> {
+                Text(
+                    text = "No ride history yet.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            else -> {
+                LazyColumn(modifier = Modifier.padding(8.dp)) {
+                    items(filteredRideRequest) { rideRequest ->
+                        RideRequestCard(rideRequest)
+                    }
+                }
+            }
+        }
+    }
+}

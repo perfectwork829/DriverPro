@@ -1,0 +1,500 @@
+package com.driver.pro2
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.SharedPreferences
+import android.media.projection.MediaProjectionManager
+import android.os.Build
+import android.os.Bundle
+import android.provider.Settings
+import android.text.TextUtils
+import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.annotation.RequiresApi
+import androidx.compose.material3.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import com.driver.pro.network.User
+import com.driver.pro.network.login
+import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import com.google.gson.Gson
+import com.driver.pro.network.getUser
+import java.util.Arrays
+import android.net.Uri
+import com.driver.pro.service.ScreenCaptureService
+import kotlin.system.exitProcess
+import rikka.shizuku.Shizuku
+import android.content.pm.PackageManager
+import android.widget.Toast
+import androidx.compose.foundation.lazy.items
+//noinspection UsingMaterialAndMaterial3Libraries
+import androidx.compose.material.BottomNavigation
+//noinspection UsingMaterialAndMaterial3Libraries
+import androidx.compose.material.BottomNavigationItem
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+
+
+
+object ShizukuHelper {
+
+    private const val REQ = 1001
+
+    fun hasPermission() = runCatching {
+        Shizuku.pingBinder() &&
+                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+    }.getOrDefault(false)
+
+    fun requestPermission(context: Context) {
+        try {
+            if (!Shizuku.pingBinder()) {
+                // Shizuku is not running
+                Toast.makeText(context, "Shizuku is not running", Toast.LENGTH_SHORT).show()
+                return
+            }
+
+            when (Shizuku.checkSelfPermission()) {
+                PackageManager.PERMISSION_GRANTED -> {
+                    Toast.makeText(context, "Permission already granted", Toast.LENGTH_SHORT).show()
+                }
+                PackageManager.PERMISSION_DENIED -> {
+                    Shizuku.requestPermission(REQ)
+                }
+            }
+        } catch (e: Throwable) {
+            // Shizuku not installed or other binder error
+            Toast.makeText(context, "Shizuku not installed or unavailable", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+}
+
+
+
+class MainActivity : ComponentActivity() {
+    private lateinit var mediaProjectionManager: MediaProjectionManager
+    private val REQUEST_CODE_CAPTURE = 1001
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+
+        setContent {
+            DriverPROApp()
+        }
+
+    }
+
+    val rideRequestsList: MutableState<List<RideRequest>> =  mutableStateOf(emptyList())
+
+    @SuppressLint("CoroutineCreationDuringComposition")
+    @Composable
+    fun DriverPROApp() {
+        val context = LocalContext.current
+        val token = getToken(context, "JWT_TOKEN")
+
+        // Create a mutable state for the user
+        val user = remember { mutableStateOf<User?>(null) }
+
+        // clearAllRequests(context, "RIDE-REQUESTS")
+//        clearAllRequests(context, "RIDE-REQUESTS-TEMP")
+
+
+        // Call the API to get user info once the token is retrieved
+        LaunchedEffect(token) {
+            if (token != null) {
+                // Call the getUser function asynchronously and update the user state
+                val result = getUser(token)
+                if (result.isSuccess) {
+                    user.value = result.getOrNull()  // Update user info if successful
+                } else {
+                    // Handle failure (e.g., show an error message)
+                    Log.e("DriverPROApp", "Failed to fetch user info: ${result.exceptionOrNull()?.message}")
+                }
+            }
+        }
+
+        // Fetch the ride requests if the user is subscribed
+        val rideRequests = getRideRequestArray(context, "RIDE-REQUESTS")
+
+
+
+        // Update the ride requests list if the user is subscribed
+        LaunchedEffect(user.value) {
+            if (user.value?.subscribed == true) {
+                rideRequestsList.value = rideRequests?.toList() ?: emptyList()
+            }
+        }
+
+        // Check if the user is authenticated and proceed accordingly
+        if (user.value != null) {
+            // If the user is authenticated, show the main ride screen
+//            MainRideScreen(user = user.value!!, rideRequests = rideRequestsList.value)
+            MainScreen(user = user.value!!, rideRequests = rideRequestsList.value)
+        } else {
+            // If no user found, show the login screen
+            LoginScreen { loggedInUser ->
+                user.value = loggedInUser  // Set the logged-in user
+            }
+        }
+    }
+
+    @Composable
+    fun LoginScreen(onLoginSuccess: (User) -> Unit) {
+        var email by remember { mutableStateOf("timurkju@gmail.com") }
+        var password by remember { mutableStateOf("L4JijUWUrvJUrgC") }
+        var error by remember { mutableStateOf("") }
+        var isLoading by remember { mutableStateOf(false) }
+
+        val scope = rememberCoroutineScope()
+        val context = LocalContext.current
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(20.dp).fillMaxWidth()) {
+
+                Text("driverPRO Login", fontSize = 24.sp, modifier = Modifier.padding(bottom = 20.dp))
+                OutlinedTextField(email, onValueChange = { email = it }, label = { Text("Email") })
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    password,
+                    onValueChange = { password = it },
+                    label = { Text("Password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                if (error.isNotEmpty()) Text(error, color = MaterialTheme.colorScheme.error)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(onClick = {
+                    isLoading = true
+                    error = ""
+                    scope.launch {
+                        val result = login(email, password)
+                        isLoading = false
+                        result.fold(
+                            onSuccess = {
+                                saveToken(context = context, it.access, it.refresh, it.user)
+                                Log.d("Login", "Login successful, user: ${it.user.username}")
+                                onLoginSuccess(it.user)
+                            },
+                            onFailure = {
+                                error = it.message ?: "Login failed"
+                                Log.e("Login Error", "${it.message}")
+                            }
+                        )
+                    }
+                }) {
+                    Text(if (isLoading) "Logging in..." else "Login")
+                }
+            }
+        }
+    }
+
+
+    @Composable
+    fun MainScreen(user: User, rideRequests: List<RideRequest>) {
+
+
+        val navController = rememberNavController()
+
+        val items = listOf(
+            BottomNavItem.Start,
+            BottomNavItem.History,
+            BottomNavItem.Settings
+        )
+
+        Scaffold(
+            bottomBar = {
+                BottomNavigation {
+                    val currentRoute =
+                        navController.currentBackStackEntryAsState().value?.destination?.route
+
+                    items.forEach { item ->
+                        BottomNavigationItem(
+                            icon = { Icon(item.icon, contentDescription = item.label) },
+                            label = { Text(item.label) },
+                            selected = currentRoute == item.route,
+                            onClick = {
+                                navController.navigate(item.route) {
+                                    popUpTo(navController.graph.startDestinationId) {
+                                        saveState = true
+                                    }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        ) { padding ->
+            NavHost(
+                navController = navController,
+                startDestination = BottomNavItem.Start.route,
+                modifier = Modifier.padding(padding)
+            ) {
+                composable(BottomNavItem.Start.route) {
+                    StartScreen(user)
+                }
+                composable(BottomNavItem.History.route) {
+                    HistoryScreen(rideRequests)
+                }
+                composable(BottomNavItem.Settings.route) {
+                    SettingsScreen()
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun StartScreen(user: User) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(modifier = Modifier.height(160.dp))
+            Text("Welcome, ${user.username}!", fontSize = 24.sp)
+            Spacer(modifier = Modifier.height(20.dp))
+            if (user.subscribed) {
+                Text("You are subscribed. You can use the service of the app.")
+                Spacer(modifier = Modifier.height(20.dp))
+
+                val context = LocalContext.current
+
+
+                Button(onClick = {
+                    if (!ShizukuHelper.hasPermission()) {
+                        ShizukuHelper.requestPermission(context)
+                    }
+                },
+                    modifier = Modifier
+                        .padding(4.dp)
+                        .fillMaxWidth()
+                ) {
+                    Text("Run Shizuku")
+                }
+
+
+
+                Button(onClick = {
+                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    ContextCompat.startActivity(context, intent, null)
+                },
+                    modifier = Modifier
+                        .padding(4.dp)
+                        .fillMaxWidth()
+                ) {
+                    Text("Enable Accessibility Service")
+                }
+
+                Button(
+                    onClick = { startScreenCapture() },
+                    modifier = Modifier
+                        .padding(4.dp)
+                        .fillMaxWidth()
+                ) {
+                    Text("Start Capture")
+                }
+
+            } else {
+                Text("You are not subscribed. Please subscribe to use our service.")
+            }
+
+
+        }
+    }
+
+    @Composable
+    fun HistoryScreen(rideRequests: List<RideRequest>) {
+        val context = LocalContext.current
+        Column(
+            modifier = Modifier.fillMaxSize().padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(modifier = Modifier.height(160.dp))
+            Button(onClick = {
+                clearAllRequests(context, "RIDE-REQUESTS")
+                rideRequestsList.value = emptyList()
+            },
+                modifier = Modifier
+                    .padding(4.dp)
+                    .fillMaxWidth()
+            ) {
+                Text("Delete history")
+            }
+            LazyColumn(modifier = Modifier.padding(16.dp)) {
+                // The `items` function takes a list of items and a lambda to display each item
+                items(rideRequests) { rideRequest ->
+                    RideRequestCard(rideRequest)
+                }
+            }
+
+        }
+
+    }
+
+    @Composable
+    fun SettingsScreen() {
+
+        var acceptScore by rememberSaveable { mutableFloatStateOf(70f) }
+        var rejectScore by rememberSaveable { mutableFloatStateOf(30f) }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            Spacer(modifier = Modifier.height(160.dp))
+
+            Text(
+                text = "Auto Accept/Reject Settings",
+                style = MaterialTheme.typography.headlineLarge
+            )
+
+            ScoreSlider(
+                title = "Auto Accept",
+                value = acceptScore,
+                valueRange = 0f..100f,
+                onValueChange = { acceptScore = it }
+            )
+
+            ScoreSlider(
+                title = "Auto Reject",
+                value = rejectScore,
+                valueRange = 0f..100f,
+                onValueChange = { rejectScore = it }
+            )
+
+            Button(
+                onClick = { startScreenCapture() },
+                modifier = Modifier
+                    .padding(4.dp)
+                    .fillMaxWidth()
+            ) {
+                Text("Confirm")
+            }
+        }
+    }
+
+    @Composable
+    fun ScoreSlider(
+        title: String,
+        value: Float,
+        valueRange: ClosedFloatingPointRange<Float>,
+        onValueChange: (Float) -> Unit
+    ) {
+        Column {
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(title)
+                Text(value.toInt().toString())
+            }
+
+            Slider(
+                value = value,
+                onValueChange = onValueChange,
+                valueRange = valueRange,
+                steps = 9 // 0–100 step by 10
+            )
+        }
+    }
+
+    // Composable to display a ride request in a card
+    @Composable
+    fun RideRequestCard(rideRequest: RideRequest) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Price: ${rideRequest.price}", fontSize = 16.sp, style = MaterialTheme.typography.bodyLarge)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("rating: ${rideRequest.rating}", fontSize = 16.sp, style = MaterialTheme.typography.bodyLarge)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("pickup_time_minutes: ${rideRequest.pickup_time_minutes}", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("pickup_distance_value: ${rideRequest.pickup_distance_value}", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("pickup_address: ${rideRequest.pickup_address_postcode}", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("TripTimeMinutes: ${rideRequest.trip_time_minutes}", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("TripDistanceMile: ${rideRequest.trip_distance_value}", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("TripDistanceMile: ${rideRequest.dropoff_address_postcode}", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Accepted: ${rideRequest.acceptedOrRejected}", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
+                Spacer(modifier = Modifier.height(4.dp))
+
+            }
+        }
+    }
+
+    private fun startScreenCapture() {
+        val intent = mediaProjectionManager.createScreenCaptureIntent()
+        startActivityForResult(intent, REQUEST_CODE_CAPTURE)
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == REQUEST_CODE_CAPTURE && resultCode == RESULT_OK && data != null) {
+
+            val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
+                putExtra("code", resultCode)
+                putExtra("data", data)
+            }
+
+            Log.d("service data", data.toString())
+
+            // IMPORTANT → MUST BE FOREGROUND SERVICE
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Log.d("service data", "forground")
+                startForegroundService(serviceIntent)
+            } else {
+                Log.d("service data", "background")
+                startService(serviceIntent)
+            }
+
+        }
+    }
+
+
+    override fun onResume() {
+        super.onResume()
+        val rideRequests = getRideRequestArray(this, "RIDE-REQUESTS")
+
+        rideRequestsList.value = rideRequests?.toList() ?: emptyList()
+
+
+    }
+
+
+}

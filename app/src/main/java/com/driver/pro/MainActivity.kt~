@@ -1,0 +1,66 @@
+package com.driver.pro
+import android.content.Intent
+import android.media.projection.MediaProjectionManager
+import android.os.Build
+import android.os.Bundle
+import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.annotation.RequiresApi
+import androidx.compose.ui.unit.sp
+import com.driver.pro.service.ScreenCaptureService
+import androidx.core.view.WindowCompat
+import com.driver.pro.ui.navigation.AppNavigation
+
+val TITLE_FONT_SIZE = 22.sp
+val HEADER_FONT_SIZE = 16.sp
+val BUTTON_FONT_SIZE = 18.sp
+
+
+
+class MainActivity : ComponentActivity() {
+    private lateinit var mediaProjectionManager: MediaProjectionManager
+    private val REQUEST_CODE_CAPTURE = 1001
+
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        setContent {
+            DriverPROApp {
+                AppNavigation()
+            }
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == REQUEST_CODE_CAPTURE && resultCode == RESULT_OK && data != null) {
+
+            val serviceIntent = Intent(this, ScreenCaptureService::class.java).apply {
+                putExtra("code", resultCode)
+                putExtra("data", data)
+            }
+
+            Log.d("service data", data.toString())
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Log.d("service data", "forground")
+                startForegroundService(serviceIntent)
+            } else {
+                Log.d("service data", "background")
+                startService(serviceIntent)
+            }
+
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+    }
+
+}
