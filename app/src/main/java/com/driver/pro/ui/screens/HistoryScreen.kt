@@ -34,8 +34,11 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.driver.pro.BuildConfig
 import com.driver.pro.RideRequest
 import com.driver.pro.clearAllRequests
+import com.driver.pro.getHistoryClearedAtMs
 import com.driver.pro.getRideRequestArray
 import com.driver.pro.getToken
+import com.driver.pro.isRideAfterHistoryClear
+import com.driver.pro.markHistoryCleared
 import com.driver.pro.network.loadRecentRideRequest
 import com.driver.pro.ui.components.RideRequestCard
 import kotlinx.coroutines.Dispatchers
@@ -60,6 +63,11 @@ fun HistoryScreen() {
     val loadError = remember { mutableStateOf<String?>(null) }
     val showClearConfirm = remember { mutableStateOf(false) }
 
+    fun applyClearedFilter(rides: List<RideRequest>): List<RideRequest> {
+        val clearedAt = getHistoryClearedAtMs(context)
+        return rides.filter { isRideAfterHistoryClear(it, clearedAt) }
+    }
+
     fun loadHistory() {
         scope.launch {
             isLoading.value = true
@@ -69,8 +77,8 @@ fun HistoryScreen() {
             }
             val jwt = getToken(context, "JWT_TOKEN")
             if (jwt.isNullOrBlank()) {
-                rideRequestsState.value = local
-                if (local.isEmpty()) {
+                rideRequestsState.value = applyClearedFilter(local)
+                if (rideRequestsState.value.isEmpty() && local.isEmpty()) {
                     loadError.value = "Not signed in — log in to load server history."
                 }
                 isLoading.value = false
@@ -83,11 +91,12 @@ fun HistoryScreen() {
                 onSuccess = { fromApi ->
                     // Local OCR debug entries never reach the server; always keep them visible for diagnostics.
                     val localDebug = local.filter { it.raw_text.startsWith("OCR debug", ignoreCase = true) }
-                    rideRequestsState.value = if (fromApi.isNotEmpty()) localDebug + fromApi else local
+                    val merged = if (fromApi.isNotEmpty()) localDebug + fromApi else local
+                    rideRequestsState.value = applyClearedFilter(merged)
                 },
                 onFailure = { e ->
-                    rideRequestsState.value = local
-                    if (local.isEmpty()) {
+                    rideRequestsState.value = applyClearedFilter(local)
+                    if (rideRequestsState.value.isEmpty() && local.isEmpty()) {
                         loadError.value = e.message ?: "Could not load history"
                     }
                 },
@@ -100,11 +109,12 @@ fun HistoryScreen() {
         scope.launch {
             withContext(Dispatchers.IO) {
                 clearAllRequests(context, "RIDE-REQUESTS")
+                markHistoryCleared(context)
             }
             rideRequestsState.value = emptyList()
             loadError.value = null
-            Toast.makeText(context, "Local history cleared", Toast.LENGTH_SHORT).show()
-            // Reload so server rows (if any) still appear after local wipe.
+            Toast.makeText(context, "History cleared", Toast.LENGTH_SHORT).show()
+            // Reload applies the cleared-at filter so old server rows stay hidden.
             loadHistory()
         }
     }
@@ -148,8 +158,8 @@ fun HistoryScreen() {
             title = { Text("Clear history?") },
             text = {
                 Text(
-                    "This deletes local OCR debug rows and cached offers on this phone. " +
-                        "Server history (if signed in) is not deleted.",
+                    "Removes all history shown on this phone (including synced server rides). " +
+                        "New offers after this will still appear.",
                 )
             },
             confirmButton = {

@@ -2000,15 +2000,22 @@ class ScreenCaptureService : Service() {
         return out
     }
 
-    /** Crop bottom ~2/3 of screen where the Uber offer card lives; reduces map OCR noise. */
+    /**
+     * Crop to the detected Uber offer card (bottom sheet). Falls back to bottom ~2/3 if detection fails.
+     * Sets [ocrCropTopPx] to the crop top used for tap mapping.
+     */
     private fun cropOfferCardRegion(bitmap: Bitmap): Bitmap {
-        val top = (bitmap.height / 3).coerceIn(0, bitmap.height - 1)
+        val detected = detectOfferCardTopPx(bitmap)
+        val fallback = (bitmap.height / 3).coerceIn(0, bitmap.height - 1)
+        val top = if (detected >= 0) detected else fallback
+        ocrCropTopPx = top
         val height = bitmap.height - top
         if (height <= 0) return bitmap
         val cropped = Bitmap.createBitmap(bitmap, 0, top, bitmap.width, height)
         if (cropped !== bitmap && !bitmap.isRecycled) {
             bitmap.recycle()
         }
+        Log.d("driverPRO-OCR", "offer-card crop top=$top/${bitmap.height} detected=$detected")
         return cropped
     }
 
@@ -2033,7 +2040,6 @@ class ScreenCaptureService : Service() {
         // Keep full-frame size for tap mapping; OCR runs on the offer-card crop only.
         ocrSourceWidth = work.width
         ocrSourceHeight = work.height
-        ocrCropTopPx = (work.height / 3).coerceIn(0, work.height - 1)
         val cardBitmap = try {
             cropOfferCardRegion(work)
         } catch (e: Exception) {

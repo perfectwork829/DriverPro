@@ -117,3 +117,63 @@ fun clearAllRequests(context: Context?, key: String) {
         remove(jsonKey(key))
     }
 }
+
+private const val HISTORY_CLEARED_AT_MS = "HISTORY_CLEARED_AT_MS"
+
+/** Mark History as cleared on this device so synced server rows disappear from the list too. */
+fun markHistoryCleared(context: Context?) {
+    if (context == null) return
+    context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit {
+        putLong(HISTORY_CLEARED_AT_MS, System.currentTimeMillis())
+    }
+}
+
+fun getHistoryClearedAtMs(context: Context?): Long {
+    if (context == null) return 0L
+    return context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        .getLong(HISTORY_CLEARED_AT_MS, 0L)
+}
+
+/**
+ * Keep only rides newer than the last Clear History tap.
+ * Supports "yyyy-MM-dd HH:mm:ss", ISO-8601, and epoch millis strings.
+ */
+fun isRideAfterHistoryClear(ride: RideRequest, clearedAtMs: Long): Boolean {
+    if (clearedAtMs <= 0L) return true
+    val createdMs = parseRideCreatedAtMs(ride.created_at)
+    // No timestamp → treat as old synced row and hide after clear.
+    if (createdMs == null) return false
+    return createdMs > clearedAtMs
+}
+
+fun parseRideCreatedAtMs(createdAt: String?): Long? {
+    val raw = createdAt?.trim().orEmpty()
+    if (raw.isEmpty()) return null
+    raw.toLongOrNull()?.let { epoch ->
+        return if (epoch < 100_000_000_000L) epoch * 1000L else epoch
+    }
+    val patterns = listOf(
+        "yyyy-MM-dd HH:mm:ss",
+        "yyyy-MM-dd'T'HH:mm:ss",
+        "yyyy-MM-dd'T'HH:mm:ss.SSS",
+        "yyyy-MM-dd'T'HH:mm:ss.SSSSSS",
+    )
+    for (p in patterns) {
+        try {
+            val local = java.time.LocalDateTime.parse(raw, java.time.format.DateTimeFormatter.ofPattern(p))
+            return local.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        } catch (_: Exception) {
+        }
+    }
+    // Truncate fractional seconds / timezone variants: "2026-08-11T17:30:50.123456+00:00"
+    val normalized = raw.replace(' ', 'T')
+    return try {
+        java.time.OffsetDateTime.parse(normalized).toInstant().toEpochMilli()
+    } catch (_: Exception) {
+        try {
+            java.time.Instant.parse(normalized).toEpochMilli()
+        } catch (_: Exception) {
+            null
+        }
+    }
+}
