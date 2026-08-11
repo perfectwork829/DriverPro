@@ -1,5 +1,6 @@
 package com.driver.pro.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,10 +10,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -29,6 +33,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.driver.pro.BuildConfig
 import com.driver.pro.RideRequest
+import com.driver.pro.clearAllRequests
 import com.driver.pro.getRideRequestArray
 import com.driver.pro.getToken
 import com.driver.pro.network.loadRecentRideRequest
@@ -53,6 +58,7 @@ fun HistoryScreen() {
     val rideRequestsState = remember { mutableStateOf<List<RideRequest>>(emptyList()) }
     val isLoading = remember { mutableStateOf(true) }
     val loadError = remember { mutableStateOf<String?>(null) }
+    val showClearConfirm = remember { mutableStateOf(false) }
 
     fun loadHistory() {
         scope.launch {
@@ -90,6 +96,19 @@ fun HistoryScreen() {
         }
     }
 
+    fun clearLocalHistory() {
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                clearAllRequests(context, "RIDE-REQUESTS")
+            }
+            rideRequestsState.value = emptyList()
+            loadError.value = null
+            Toast.makeText(context, "Local history cleared", Toast.LENGTH_SHORT).show()
+            // Reload so server rows (if any) still appear after local wipe.
+            loadHistory()
+        }
+    }
+
     LaunchedEffect(Unit) {
         loadHistory()
     }
@@ -123,6 +142,34 @@ fun HistoryScreen() {
         debug + rest
     }
 
+    if (showClearConfirm.value) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirm.value = false },
+            title = { Text("Clear history?") },
+            text = {
+                Text(
+                    "This deletes local OCR debug rows and cached offers on this phone. " +
+                        "Server history (if signed in) is not deleted.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showClearConfirm.value = false
+                        clearLocalHistory()
+                    },
+                ) {
+                    Text("Clear")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirm.value = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -146,6 +193,18 @@ fun HistoryScreen() {
                 modifier = Modifier.padding(2.dp),
             ) {
                 Text(showFilter(mFilter.intValue))
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            OutlinedButton(
+                onClick = { showClearConfirm.value = true },
+                enabled = !isLoading.value,
+            ) {
+                Text("Clear History")
             }
         }
 

@@ -1527,6 +1527,12 @@ const val ACTION_DRIVERPRO_CAPTURE_STARTED = "com.driver.pro.ACTION_CAPTURE_STAR
 /** OCR could not place a tap — ask [DriverAppAccessibilityService] to find Confirm / X in the node tree. */
 const val ACTION_A11Y_TAP_DECISION = "com.driver.pro.ACTION_A11Y_TAP_DECISION"
 
+/** Show touchable Accept / Decline / Skip overlay when OCR is incomplete or low-confidence. */
+const val ACTION_SHOW_MANUAL_CONFIRM = "com.driver.pro.ACTION_SHOW_MANUAL_CONFIRM"
+
+/** Below this OCR accuracy, auto-accept/reject pauses for a manual confirm window. */
+const val LOW_OCR_CONFIDENCE_THRESHOLD = 80
+
 class ScreenCaptureService : Service() {
 
     private var mediaProjection: MediaProjection? = null
@@ -2008,6 +2014,16 @@ class ScreenCaptureService : Service() {
 
     private fun runOCR(bitmap: Bitmap) {
         Log.d("MY-BROADCAST", "ocr real start")
+        // Pause OCR while the driver is deciding on the confirm window.
+        if (DriverAppAccessibilityService.isManualConfirmVisible) {
+            if (!bitmap.isRecycled) {
+                try {
+                    bitmap.recycle()
+                } catch (_: Exception) {
+                }
+            }
+            return
+        }
         screenCaptureWidth = bitmap.width
         screenCaptureHeight = bitmap.height
         val work = scaleDownForOcr(bitmap)
@@ -2115,7 +2131,16 @@ class ScreenCaptureService : Service() {
                     Log.w("driverPRO-OCR", ocrError)
                     ocrStabilityGate.reset()
                     saveDebugOcrAttempt(ride, updatedText, imageUri?.toString(), ocrError)
-                    reportNoScore(ocrError, listMissingRideFields(ride, updatedText))
+                    val missing = listMissingRideFields(ride, updatedText)
+                    reportNoScore(ocrError, missing)
+                    requestManualConfirm(
+                        title = "Unsure reading — decide manually",
+                        detail = formatIncompleteOverlayMessage(ocrError, missing) +
+                            "\n£${"%.2f".format(ride.price)} · " +
+                            "${ride.pickup_address_postcode ?: "?"} → ${ride.dropoff_address_postcode ?: "?"}",
+                        suggestedStatus = 0,
+                        score = 0,
+                    )
                     return@addOnSuccessListener
                 }
 
@@ -2161,9 +2186,28 @@ class ScreenCaptureService : Service() {
                         val scored = rideRequest.copy(
                             raw_text = ride.raw_text,
                             ocr_image_uri = ride.ocr_image_uri,
+                            accuracy = ride.accuracy,
                         )
                         val score = scored.final_score ?: 0
-                        if (scored.acceptedOrRejected == 1) {
+                        val lowConfidence = scored.accuracy < LOW_OCR_CONFIDENCE_THRESHOLD
+                        val needsManualConfirm =
+                            lowConfidence &&
+                                (scored.acceptedOrRejected == 1 || scored.acceptedOrRejected == -1)
+
+                        if (needsManualConfirm) {
+                            val action = if (scored.acceptedOrRejected == 1) "Accept" else "Reject"
+                            requestManualConfirm(
+                                title = "Low confidence — confirm $action?",
+                                detail = "Score: $score · OCR ${scored.accuracy}%\n" +
+                                    "£${"%.2f".format(scored.price)} · " +
+                                    "${scored.pickup_address_postcode ?: "?"} → " +
+                                    "${scored.dropoff_address_postcode ?: "?"}\n" +
+                                    "Suggested: $action",
+                                suggestedStatus = scored.acceptedOrRejected,
+                                score = score,
+                            )
+                            toastOnMain("Score: $score — waiting for your confirm")
+                        } else if (scored.acceptedOrRejected == 1) {
                             val tapped = captureAndSendTap(
                                 result,
                                 acceptTapKeys,
@@ -2366,6 +2410,23 @@ class ScreenCaptureService : Service() {
                 putExtra("top_only", true)
                 putExtra("hold_ms", 4000)
                 putStringArrayListExtra("missing_fields", ArrayList(missingFields))
+                setPackage(applicationContext.packageName)
+            },
+        )
+    }
+
+    private fun requestManualConfirm(
+        title: String,
+        detail: String,
+        suggestedStatus: Int,
+        score: Int,
+    ) {
+        applicationContext.sendBroadcast(
+            Intent(ACTION_SHOW_MANUAL_CONFIRM).apply {
+                putExtra("title", title)
+                putExtra("detail", detail)
+                putExtra("suggested_status", suggestedStatus)
+                putExtra("score", score)
                 setPackage(applicationContext.packageName)
             },
         )

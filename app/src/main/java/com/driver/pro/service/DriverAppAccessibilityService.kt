@@ -19,9 +19,12 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.ImageView
 import android.provider.Settings
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import android.graphics.Rect
@@ -82,6 +85,10 @@ open class DriverAppAccessibilityService : AccessibilityService() {
         @Volatile
         private var instance: DriverAppAccessibilityService? = null
 
+        /** True while the manual Accept/Decline/Skip overlay is on screen (pauses OCR). */
+        @Volatile
+        var isManualConfirmVisible: Boolean = false
+
         /** Latest Accessibility snapshot of on-screen text (empty if service off). */
         fun snapshotOfferText(): String? {
             return try {
@@ -91,6 +98,9 @@ open class DriverAppAccessibilityService : AccessibilityService() {
             }
         }
     }
+
+    private var manualConfirmView: View? = null
+    private var manualConfirmDismissRunnable: Runnable? = null
 
     private val confirmReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -142,7 +152,16 @@ open class DriverAppAccessibilityService : AccessibilityService() {
         }
     }
 
-
+    private val manualConfirmReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent == null) return
+            val title = intent.getStringExtra("title") ?: "Confirm decision"
+            val detail = intent.getStringExtra("detail").orEmpty()
+            val suggested = intent.getIntExtra("suggested_status", 0)
+            val score = intent.getIntExtra("score", 0)
+            showManualConfirmOverlay(title, detail, suggested, score)
+        }
+    }
 
     fun clickPositionWithShizuku(x: Int, y: Int) {
         if (Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) return
@@ -186,9 +205,15 @@ open class DriverAppAccessibilityService : AccessibilityService() {
                 IntentFilter(ACTION_A11Y_TAP_DECISION),
                 Context.RECEIVER_NOT_EXPORTED,
             )
+            registerReceiver(
+                manualConfirmReceiver,
+                IntentFilter(ACTION_SHOW_MANUAL_CONFIRM),
+                Context.RECEIVER_NOT_EXPORTED,
+            )
         } else {
             registerReceiver(confirmReceiver, IntentFilter("ACTION_CLICK_CONFIRM"))
             registerReceiver(a11yDecisionReceiver, IntentFilter(ACTION_A11Y_TAP_DECISION))
+            registerReceiver(manualConfirmReceiver, IntentFilter(ACTION_SHOW_MANUAL_CONFIRM))
         }
         Log.d("MY-BROADCAST", "Connected")
     }
@@ -484,6 +509,160 @@ open class DriverAppAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Touchable overlay when OCR is incomplete or low-confidence.
+     * Accept / Decline taps Uber via accessibility; Skip leaves the offer alone.
+     */
+    private fun showManualConfirmOverlay(
+        title: String,
+        detail: String,
+        suggestedStatus: Int,
+        score: Int,
+    ) {
+        Handler(mainLooper).post {
+            try {
+                if (!Settings.canDrawOverlays(this)) {
+                    Toast.makeText(
+                        this,
+                        "$title — enable Display over other apps for confirm buttons",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    return@post
+                }
+                dismissManualConfirmOverlay()
+
+                val density = resources.displayMetrics.density
+                fun dp(v: Int) = (v * density).toInt()
+
+                val panel = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(16), dp(14), dp(16), dp(14))
+                    background = GradientDrawable().apply {
+                        setColor(Color.argb(230, 18, 18, 22))
+                        cornerRadius = dp(14).toFloat()
+                    }
+                }
+
+                panel.addView(
+                    TextView(this).apply {
+                        text = title
+                        setTextColor(Color.WHITE)
+                        textSize = 16f
+                        setPadding(0, 0, 0, dp(6))
+                    },
+                )
+                panel.addView(
+                    TextView(this).apply {
+                        text = detail
+                        setTextColor(Color.argb(230, 220, 220, 220))
+                        textSize = 13f
+                        setPadding(0, 0, 0, dp(12))
+                    },
+                )
+
+                val buttons = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    weightSum = 3f
+                }
+
+                fun actionButton(label: String, bg: Int, onClick: () -> Unit): Button {
+                    return Button(this).apply {
+                        text = label
+                        textSize = 13f
+                        setTextColor(Color.WHITE)
+                        background = GradientDrawable().apply {
+                            setColor(bg)
+                            cornerRadius = dp(10).toFloat()
+                        }
+                        setOnClickListener { onClick() }
+                        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                            marginEnd = dp(6)
+                        }
+                        isAllCaps = false
+                        minimumHeight = dp(44)
+                    }
+                }
+
+                val acceptBg = if (suggestedStatus == 1) Color.parseColor("#1B7F4E") else Color.parseColor("#2E7D32")
+                val declineBg = if (suggestedStatus == -1) Color.parseColor("#B71C1C") else Color.parseColor("#C62828")
+
+                buttons.addView(
+                    actionButton("Accept", acceptBg) {
+                        dismissManualConfirmOverlay()
+                        val ok = tryPerformDecisionTap(1, score)
+                        showLogOverlay(
+                            if (ok) "Accepted (manual)" else "Accept failed — tap Confirm/Match yourself",
+                            holdMs = 2500L,
+                        )
+                    },
+                )
+                buttons.addView(
+                    actionButton("Decline", declineBg) {
+                        dismissManualConfirmOverlay()
+                        val ok = tryPerformDecisionTap(-1, score)
+                        showLogOverlay(
+                            if (ok) "Declined (manual)" else "Decline failed — tap X yourself",
+                            holdMs = 2500L,
+                        )
+                    },
+                )
+                buttons.addView(
+                    actionButton("Skip", Color.parseColor("#455A64")) {
+                        dismissManualConfirmOverlay()
+                        showLogOverlay("Skipped — no auto tap", holdMs = 1800L)
+                    }.also {
+                        (it.layoutParams as LinearLayout.LayoutParams).marginEnd = 0
+                    },
+                )
+                panel.addView(buttons)
+
+                val params = WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    WindowManager.LayoutParams.WRAP_CONTENT,
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                    else
+                        WindowManager.LayoutParams.TYPE_PHONE,
+                    // Touchable (no FLAG_NOT_TOUCHABLE) so Accept/Decline/Skip work.
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT,
+                ).apply {
+                    gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                    y = dp(72)
+                    width = resources.displayMetrics.widthPixels - dp(24)
+                }
+
+                val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+                wm.addView(panel, params)
+                manualConfirmView = panel
+                isManualConfirmVisible = true
+
+                val dismiss = Runnable { dismissManualConfirmOverlay() }
+                manualConfirmDismissRunnable = dismiss
+                Handler(mainLooper).postDelayed(dismiss, 20_000L)
+            } catch (e: Exception) {
+                Log.e("DriverAppA11y", "Manual confirm overlay failed", e)
+                isManualConfirmVisible = false
+                Toast.makeText(this, title, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun dismissManualConfirmOverlay() {
+        val view = manualConfirmView
+        manualConfirmView = null
+        isManualConfirmVisible = false
+        manualConfirmDismissRunnable?.let { Handler(mainLooper).removeCallbacks(it) }
+        manualConfirmDismissRunnable = null
+        if (view == null) return
+        try {
+            val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+            wm.removeView(view)
+        } catch (_: Exception) {
+        }
+    }
+
     private fun clickAt(rawX: Int, rawY: Int, score: Int) {
         Handler(mainLooper).postDelayed({
             performGestureTap(rawX, rawY, attempt = 1, score)
@@ -543,8 +722,10 @@ open class DriverAppAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         if (instance === this) instance = null
+        dismissManualConfirmOverlay()
         try { unregisterReceiver(confirmReceiver) } catch (_: Exception) {}
         try { unregisterReceiver(a11yDecisionReceiver) } catch (_: Exception) {}
+        try { unregisterReceiver(manualConfirmReceiver) } catch (_: Exception) {}
         super.onDestroy()
     }
 }
