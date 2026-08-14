@@ -28,11 +28,19 @@ class RideOcrCorpusTest(private val caseId: String) {
         val expected = JSONObject(readResource("ocr_corpus/$caseId.json"))
         val ride = fillMissingTripMetrics(text, parseRideInfo(text, null))
 
-        expected.optString("pickup_postcode").takeIf { it.isNotBlank() }?.let {
-            assertEquals("[$caseId] pickup", it, ride.pickup_address_postcode)
+        if (expected.has("pickup_postcode")) {
+            assertEquals(
+                "[$caseId] pickup",
+                expected.getString("pickup_postcode"),
+                ride.pickup_address_postcode.orEmpty(),
+            )
         }
-        expected.optString("drop_postcode").takeIf { it.isNotBlank() }?.let {
-            assertEquals("[$caseId] drop", it, ride.dropoff_address_postcode)
+        if (expected.has("drop_postcode")) {
+            assertEquals(
+                "[$caseId] drop",
+                expected.getString("drop_postcode"),
+                ride.dropoff_address_postcode.orEmpty(),
+            )
         }
         if (expected.has("price")) {
             assertEquals("[$caseId] price", expected.getDouble("price"), ride.price, 0.05)
@@ -71,12 +79,8 @@ class RideOcrCorpusTest(private val caseId: String) {
     }
 
     companion object {
-        /** Add new client OCR dumps here — keeps corpus discoverable without directory listing. */
-        private val CASE_IDS = listOf(
-            "july25_e1w_ec2r",
-            "july25_xl_37_41",
-            "july25_el_sel_spitalfields",
-        )
+        /** Golden corpus — see also [OCR_CORPUS_CASE_IDS]. */
+        private val CASE_IDS = OCR_CORPUS_CASE_IDS
 
         @JvmStatic
         @Parameterized.Parameters(name = "{0}")

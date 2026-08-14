@@ -1,0 +1,10 @@
+{
+  "id": "aug25_trip_mi_157_5",
+  "note": "ID-2302 long Assist trip miles decimal shift",
+  "price": 168.1,
+  "rating": 4.55,
+  "pickup_postcode": "TW6",
+  "drop_postcode": "TA1",
+  "trip_miles": 157.5,
+  "must_score": true
+}

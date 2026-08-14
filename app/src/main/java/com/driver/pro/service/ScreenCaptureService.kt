@@ -473,7 +473,9 @@ fun fillMissingTripMetrics(ocr: String, ride: RideRequest): RideRequest {
     val postcodes = extractOuterLondonPostcodes(ocr)
     var pickupPc = reconciled.pickup_address_postcode.orEmpty()
     var dropPc = reconciled.dropoff_address_postcode.orEmpty()
-    if (pickupPc.isBlank() && postcodes.size >= 2) pickupPc = postcodes[0]
+    if (pickupPc.isBlank() && postcodes.size >= 2 && !ocrHasPickupAddressWithoutPostcode(ocr)) {
+        pickupPc = postcodes[0]
+    }
     if (dropPc.isBlank() && postcodes.size >= 2) dropPc = postcodes[1]
     val zonePostcodes = resolvePostcodesFromLegZones(ocr)
     if (pickupPc.isBlank() && zonePostcodes.first.isNotBlank()) pickupPc = zonePostcodes.first
@@ -577,8 +579,8 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
         // "Hill" → HI11 and other map-label fakes: area must be a real UK postcode area.
         if (p !in UK_POSTCODE_AREAS) return null
         if (numberPart !in 0..99) return null
-        // District 0 only exists in Croydon (CR0) — "NOR" must not become N0R.
-        if (numberPart == 0 && p != "CR") return null
+        // District 0: real areas CR0, HA0 — reject map fakes like N0R.
+        if (numberPart == 0 && !allowsDistrictZero(p)) return null
         // Only central London sectors use a trailing letter (W1A, SW1A, EC1A, …).
         // Do not coerce CR0S → CR0 (that invented Croydon codes from OCR garbage).
         val letterDistrictPrefixes = setOf("E", "EC", "N", "NW", "SE", "SW", "W", "WC")
@@ -1228,11 +1230,11 @@ fun parseRideInfo(ocrText: String, visionText: Text? = null): RideRequest {
         extractBestPrice(ocrText).let { recovered ->
             if (recovered >= 5.0) priceReal = recovered
         }
-        // £11.64 OCR'd as £1.16 — recover leading tens digit when XX.YZ appears in OCR.
-        if (priceReal in 1.0..1.99) {
+        // Recover leading tens digit: £11.64→1.16, £17.54→1.75 when XX.YY appears elsewhere in OCR.
+        if (priceReal in 1.0..4.99) {
             Regex("""(?<![\d.])(1[0-9])[.,](\d{2})(?![\d.])""").findAll(ocrText).forEach { m ->
                 val v = "${m.groupValues[1]}.${m.groupValues[2]}".toDoubleOrNull() ?: return@forEach
-                if (v in 8.0..80.0) priceReal = maxOf(priceReal, v)
+                if (v in 8.0..80.0 && v > priceReal) priceReal = maxOf(priceReal, v)
             }
         }
     }
@@ -1296,11 +1298,11 @@ fun parseRideInfo(ocrText: String, visionText: Text? = null): RideRequest {
 
     val timeList = extractTime(ocrText)
     val legPairs = extractTripLegPairsInOrder(ocrText)
-    var pickupTime = structured?.pickupMinutes?.toDouble()
-        ?: legPairs.getOrNull(0)?.first?.toDouble()
+    var pickupTime = legPairs.getOrNull(0)?.first?.toDouble()
+        ?: structured?.pickupMinutes?.toDouble()
         ?: timeList.getOrNull(0)?.toDouble()
-    var tripTime = structured?.tripMinutes?.toDouble()
-        ?: legPairs.getOrNull(1)?.first?.toDouble()
+    var tripTime = legPairs.getOrNull(1)?.first?.toDouble()
+        ?: structured?.tripMinutes?.toDouble()
         ?: timeList.getOrNull(1)?.toDouble()
 
     val distanceList = extractDistance(ocrText)
@@ -1317,11 +1319,11 @@ fun parseRideInfo(ocrText: String, visionText: Text? = null): RideRequest {
         tripTime = timeList[1].toDouble()
     }
 
-    var rawPickup = structured?.pickupMiles?.toString()
-        ?: legPairs.getOrNull(0)?.second?.toString()
+    var rawPickup = legPairs.getOrNull(0)?.second?.toString()
+        ?: structured?.pickupMiles?.toString()
         ?: distanceList.getOrNull(0)
-    var rawTrip = structured?.tripMiles?.toString()
-        ?: legPairs.getOrNull(1)?.second?.toString()
+    var rawTrip = legPairs.getOrNull(1)?.second?.toString()
+        ?: structured?.tripMiles?.toString()
         ?: distanceList.getOrNull(1)
     if ((legPairs.size == 1 && timeList.size >= 2) ||
         (legPairs.size >= 2 && legPairs[0].first == legPairs[1].first && timeList.size >= 2)
@@ -1439,12 +1441,21 @@ fun parseRideInfo(ocrText: String, visionText: Text? = null): RideRequest {
     // drop address sits ABOVE the final "N mins (X mi)" line). When we ended up with a blank or
     // duplicated drop but the card clearly shows two distinct postcodes, fall back to document order
     // (pickup appears above drop on the card).
-    if (dropoffPostcode.isBlank() || pickupPostcode == dropoffPostcode) {
+    if (dropoffPostcode.isBlank() ||
+        (pickupPostcode == dropoffPostcode && !ocrHasPickupAddressWithoutPostcode(ocrText))
+    ) {
         val ordered = extractOuterLondonPostcodes(ocrText).distinct()
         if (ordered.size >= 2) {
             pickupPostcode = ordered[0]
             dropoffPostcode = ordered[1]
         }
+    }
+    // Uber omitted pickup postcode — do not borrow drop outward onto pickup.
+    if (ocrHasPickupAddressWithoutPostcode(ocrText) &&
+        pickupPostcode.isNotBlank() &&
+        pickupPostcode == dropoffPostcode
+    ) {
+        pickupPostcode = ""
     }
     val allOutwards = extractOuterLondonPostcodes(ocrText)
     // Same-district return (N17→N17): one unique outward appears twice in OCR.

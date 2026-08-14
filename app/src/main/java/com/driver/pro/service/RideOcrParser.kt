@@ -406,7 +406,8 @@ internal fun parseOcrMiles(raw: String, legMinutes: Int? = null): Double? {
         if (minutes > 0) {
             val mph = value / (minutes / 60.0)
             // 71.0 mi for ~54 min is almost always 7.1 mi with a spurious tens digit.
-            if (mph > 55.0 && scaledOk) {
+            // Do not scale when the raw value is already speed-plausible (e.g. 157.5 mi / 2 hr 42 min).
+            if (mph > 55.0 && scaledOk && !isPlausibleMilesForMinutes(value, minutes)) {
                 value = scaled
                 return value
             }
@@ -474,6 +475,23 @@ internal fun parseOcrMiles(raw: String, legMinutes: Int? = null): Double? {
             if (alt in 3.0..4.5 && isPlausibleMilesForMinutes(alt, legMinutes)) {
                 value = alt
             }
+        }
+    }
+
+    // "0.1 mi" on 1 min pickup often OCRs as "0.11 mi" (extra 1 from "1 min").
+    if (legMinutes != null && legMinutes <= 2 && value in 0.105..0.119) {
+        val asOneTenth = 0.1
+        if (isPlausibleMilesForMinutes(asOneTenth, legMinutes)) {
+            value = asOneTenth
+        }
+    }
+
+    // Very long Assist trips: "157.5 mi" OCRs as "15.75" (lost tens digit).
+    if (legMinutes != null && legMinutes >= 90 && value in 10.0..35.0) {
+        val mph = value / (legMinutes / 60.0)
+        val scaled = value * 10.0
+        if (mph < 15.0 && scaled in 50.0..250.0 && isPlausibleMilesForMinutes(scaled, legMinutes)) {
+            value = scaled
         }
     }
 
@@ -545,6 +563,12 @@ internal fun parseTripLegFromLine(line: String): TripLegParse? {
         if (scaled in 0.2..200.0 && isPlausibleMilesForMinutes(scaled, totalMinutes)) {
             miles = scaled
         }
+    }
+    // Very long trips: 157.5 mi misread as 15.75 — upscale when average speed is impossibly low.
+    if (totalMinutes >= 90 && miles in 10.0..35.0) {
+        val mph = miles / (totalMinutes / 60.0)
+        val scaled = miles * 10.0
+        if (mph < 15.0 && isPlausibleMilesForMinutes(scaled, totalMinutes)) miles = scaled
     }
     // "29 mins (94 mi)" — missing decimal (9.4) when mph is absurd for urban trip.
     if (totalMinutes in 15..60 && miles in 30.0..99.0 && !isPlausibleMilesForMinutes(miles, totalMinutes)) {
@@ -914,7 +938,6 @@ internal fun extractTripLegPairsInOrder(ocr: String): List<Pair<Int, Double>> {
 }
 
 /** UK outward code shape: 1–2 letters + 1–2 digits + optional letter (e.g. GU1, GU21, KT5, SW1A). */
-/** Real UK postcode areas — map words like "Hill"→HI11 or "NOR"→N0R must never become outwards. */
 internal val UK_POSTCODE_AREAS = setOf(
     "AB", "AL", "B", "BA", "BB", "BD", "BH", "BL", "BN", "BR", "BS", "BT",
     "CA", "CB", "CF", "CH", "CM", "CO", "CR", "CT", "CV", "CW",
@@ -930,6 +953,12 @@ internal val UK_POSTCODE_AREAS = setOf(
     "W", "WA", "WC", "WD", "WF", "WN", "WR", "WS", "WV", "YO", "ZE",
 )
 
+/** Real UK outward districts ending in 0 (CR0 Croydon, HA0 Wembley — not map fakes like N0R). */
+internal val UK_DISTRICT_ZERO_PREFIXES = setOf("CR", "HA")
+
+internal fun allowsDistrictZero(prefix: String): Boolean =
+    prefix.uppercase() in UK_DISTRICT_ZERO_PREFIXES
+
 internal fun isValidUkOutward(code: String): Boolean {
     val upper = code.uppercase()
     val m = Regex("""^([A-Z]{1,2})(\d{1,2})([A-Z]?)$""").find(upper) ?: return false
@@ -938,8 +967,7 @@ internal fun isValidUkOutward(code: String): Boolean {
     val trailing = m.groupValues[3]
     // "HI11" from map label "Hill" — the area must be a real UK postcode area.
     if (letters !in UK_POSTCODE_AREAS) return false
-    // District 0 only exists in Croydon (CR0) — "NOR" text must not become N0R.
-    if (digits.toIntOrNull() == 0 && letters != "CR") return false
+    if (digits.toIntOrNull() == 0 && !allowsDistrictZero(letters)) return false
     // CR0S / BR1A-style fakes — trailing letter only for central sectors.
     if (trailing.isNotEmpty() && letters !in setOf("E", "EC", "N", "NW", "SE", "SW", "W", "WC")) return false
     return true

@@ -1,0 +1,9 @@
+{
+  "id": "aug25_ha0_pickup",
+  "note": "ID-2413 HA0 Wembley outward",
+  "price": 18.29,
+  "rating": 4.75,
+  "pickup_postcode": "HA0",
+  "drop_postcode": "W1W",
+  "must_score": true
+}

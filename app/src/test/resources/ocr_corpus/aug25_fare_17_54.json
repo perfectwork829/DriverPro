@@ -1,0 +1,9 @@
+{
+  "id": "aug25_fare_17_54",
+  "note": "ID-2266 fare decimal shift",
+  "price": 17.54,
+  "rating": 4.66,
+  "pickup_postcode": "W1D",
+  "drop_postcode": "SE5",
+  "must_score": true
+}

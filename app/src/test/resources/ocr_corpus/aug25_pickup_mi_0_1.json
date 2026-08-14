@@ -1,0 +1,11 @@
+{
+  "id": "aug25_pickup_mi_0_1",
+  "note": "ID-2279 pickup 0.1 mi misread as 0.11",
+  "price": 11.71,
+  "rating": 4.77,
+  "pickup_miles": 0.1,
+  "trip_miles": 3.3,
+  "pickup_postcode": "WC2E",
+  "drop_postcode": "W2",
+  "must_score": true
+}

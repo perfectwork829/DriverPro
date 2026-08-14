@@ -1,0 +1,9 @@
+{
+  "id": "aug25_no_pickup_pc",
+  "note": "ID-2269 Uber omits pickup postcode — must not invent W2 on pickup",
+  "price": 12.06,
+  "rating": 4.82,
+  "pickup_postcode": "",
+  "drop_postcode": "W2",
+  "must_score": true
+}
