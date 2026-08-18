@@ -335,6 +335,13 @@ fun extractBestPrice(text: String): Double {
             .minByOrNull { kotlin.math.abs(it - lowPound * 10) }
             ?: bareAmounts.filter { it in 8.0..80.0 }.maxOrNull()
         if (recovered != null) return recovered
+        val timesTen = kotlin.math.round(lowPound * 1000.0) / 100.0
+        if (timesTen in 10.0..80.0 && timesTen > lowPound * 4 &&
+            Regex("""\b([2-9]\d|[1-9]\d{2})\s*mins?\b""", RegexOption.IGNORE_CASE)
+                .containsMatchIn(text)
+        ) {
+            return timesTen
+        }
         // Digits on next line: "£1.16" / "11.64"
         Regex("""(?m)(?<![\d.])(1[0-9])[.,](\d{2})(?![\d.])""").find(text)?.let { m ->
             val v = "${m.groupValues[1]}.${m.groupValues[2]}".toDoubleOrNull()
@@ -1236,6 +1243,14 @@ fun parseRideInfo(ocrText: String, visionText: Text? = null): RideRequest {
                 val v = "${m.groupValues[1]}.${m.groupValues[2]}".toDoubleOrNull() ?: return@forEach
                 if (v in 8.0..80.0 && v > priceReal) priceReal = maxOf(priceReal, v)
             }
+            // £17.19→£1.71 when OCR drops the tens digit and only the low £ fare remains.
+            val timesTen = kotlin.math.round(priceReal * 1000.0) / 100.0
+            if (timesTen in 10.0..80.0 && timesTen > priceReal * 4 &&
+                Regex("""\b([2-9]\d|[1-9]\d{2})\s*mins?\b""", RegexOption.IGNORE_CASE)
+                    .containsMatchIn(ocrText)
+            ) {
+                priceReal = maxOf(priceReal, timesTen)
+            }
         }
     }
 
@@ -1288,9 +1303,29 @@ fun parseRideInfo(ocrText: String, visionText: Text? = null): RideRequest {
     }
     val finalRating = rating ?: 3.50
 
+    // Prefer £ fare over rating-shaped header noise (e.g. ★ 4.72 beside £1.71 → £17.19 trip).
+    val poundFares = ocrText.lineSequence()
+        .filterNot { isAddonFareLine(it) }
+        .flatMap { extractPrice(it) }
+        .filter { it >= 1.0 }
+        .toList()
+    if ((priceReal in 4.0..5.05 || priceReal < 1.0) && poundFares.any { it in 1.0..4.99 }) {
+        val lowPound = poundFares.filter { it in 1.0..4.99 }.minOrNull()!!
+        val timesTen = kotlin.math.round(lowPound * 1000.0) / 100.0
+        priceReal = if (timesTen in 10.0..80.0 &&
+            Regex("""\b([2-9]\d|[1-9]\d{2})\s*mins?\b""", RegexOption.IGNORE_CASE)
+                .containsMatchIn(ocrText)
+        ) {
+            timesTen
+        } else {
+            lowPound
+        }
+    }
+
     // £11.44 unreadable over the map: the ★ 4.48 rating must not be reported as the fare.
     if (priceReal in 4.0..5.05 && kotlin.math.abs(priceReal - finalRating) < 0.02 &&
-        extractPrice(ocrText).isEmpty() && structured?.price == null
+        extractPrice(ocrText).isEmpty() && structured?.price == null &&
+        !Regex("""[£$]\s*\d+[.,]\d{2}""").containsMatchIn(ocrText)
     ) {
         priceReal = 0.0
         accuracy = 50
@@ -1456,6 +1491,30 @@ fun parseRideInfo(ocrText: String, visionText: Text? = null): RideRequest {
         pickupPostcode == dropoffPostcode
     ) {
         pickupPostcode = ""
+    }
+    // Uber omitted drop postcode — do not borrow pickup outward onto drop.
+    if (ocrHasDropAddressWithoutPostcode(ocrText) &&
+        dropoffPostcode.isNotBlank() &&
+        pickupPostcode.isNotBlank() &&
+        dropoffPostcode == pickupPostcode
+    ) {
+        dropoffPostcode = ""
+    }
+    // Final leg-zone pass: recover blank or duplicated postcodes from address lines.
+    val finalZones = resolvePostcodesFromLegZones(ocrText)
+    if (pickupPostcode.isBlank() && finalZones.first.isNotBlank()) {
+        pickupPostcode = finalZones.first
+    }
+    if (dropoffPostcode.isBlank() && finalZones.second.isNotBlank()) {
+        dropoffPostcode = finalZones.second
+    }
+    if (pickupPostcode.isNotBlank() && dropoffPostcode.isNotBlank() &&
+        pickupPostcode == dropoffPostcode &&
+        finalZones.first.isNotBlank() && finalZones.second.isNotBlank() &&
+        finalZones.first != finalZones.second
+    ) {
+        pickupPostcode = finalZones.first
+        dropoffPostcode = finalZones.second
     }
     val allOutwards = extractOuterLondonPostcodes(ocrText)
     // Same-district return (N17→N17): one unique outward appears twice in OCR.

@@ -486,9 +486,10 @@ open class DriverAppAccessibilityService : AccessibilityService() {
                             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                     PixelFormat.TRANSLUCENT
                 ).apply {
-                    gravity = Gravity.TOP or Gravity.START
+                    // Bottom-left so the score toast does not cover fare / postcodes on the offer card.
+                    gravity = Gravity.BOTTOM or Gravity.START
                     this.x = x
-                    this.y = y
+                    this.y = y.coerceAtLeast(80)
                 }
 
                 if (!Settings.canDrawOverlays(this)) {

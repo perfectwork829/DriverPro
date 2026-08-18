@@ -51,17 +51,23 @@ Corpus cases live in `app/src/test/resources/ocr_corpus/`.
    - Remove duplicate manifest permissions flagged at build time.
    - Replace debug-signed release with Play App Signing upload key.
 
-## v1.17 field-test notes (Aug hardening)
+## v1.18 field-test notes (Aug 2026 client batch — 56 offers, 13 errors)
 
-Parser fixes from client recordings/screenshots:
+Parser fixes from 15 paired client cases:
 
 | Issue | Fix |
 |-------|-----|
-| HA0 pickup rejected | Allow HA + CR for district `0` |
-| £17.54 → £1.75 | Tens-digit fare recovery |
-| 0.1 mi → 0.11 mi | Short-leg decimal noise |
-| 157.5 mi → 15.75 mi | Long Assist trip upscale + no erroneous scale-down |
-| Borrowed drop postcode on pickup | Clear pickup when address has no PC |
+| £17.19 → £1.71 | Tens-digit fare recovery from low £ OCR + ignore holiday add-on £ |
+| W11 / NW10 pickup missing | Leg-zone postcode recovery + final zone pass |
+| Map label drop PC (N1, CR0) | Skip bare map district tokens without address |
+| Borrowed drop PC (NW9, HA0) | Clear drop when Uber omits postcode on drop line |
+| HA0 → HA9 swap | Final zone pass when pickup==drop |
+| 8.9 → 3.9 trip miles | 3.x→8.x upscale; keep 8.9 (don't downgrade 8.8→3.8 range bug) |
+| 3.8 → 3.3 trip miles | Decimal 8→3 recovery on 12–20 min legs |
+| 0.1 → 1.0 pickup | Stop treating 0.1 mi as 0.0 mi→1.0 mi |
+| Score overlay on offer | Moved to bottom-left (was top, covering fare) |
+
+Regression gate: `AugFieldBatchTest` (11 client cases) + corpus ≥95%.
 
 Features from Phase 2 delivery order:
 

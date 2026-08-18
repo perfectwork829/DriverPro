@@ -429,10 +429,15 @@ internal fun parseOcrMiles(raw: String, legMinutes: Int? = null): Double? {
         }
     }
 
-    // "(0.0 mi)" / "0.0" is almost always "1.0 mi" misread on a short pickup leg.
-    if (legMinutes != null && legMinutes in 2..10 && value in 0.0..0.15) {
+    // "(0.0 mi)" is almost always "1.0 mi" misread — do NOT upgrade real "0.1 mi" pickups.
+    if (legMinutes != null && legMinutes in 2..10 && value in 0.0..0.05) {
         val asOne = 1.0
         if (isPlausibleMilesForMinutes(asOne, legMinutes)) value = asOne
+    }
+    // Very short pickup: "1.0 mi" OCR'd from "0.1 mi" on ≤2 min legs.
+    if (legMinutes != null && legMinutes <= 2 && value in 0.95..1.05) {
+        val asTenth = 0.1
+        if (isPlausibleMilesForMinutes(asTenth, legMinutes)) value = asTenth
     }
 
     // REMOVED: "0.8 mi" → "0.3 mi" heuristic. Short pickups like "4 min (0.3 mi)"
@@ -449,12 +454,26 @@ internal fun parseOcrMiles(raw: String, legMinutes: Int? = null): Double? {
         }
     }
 
-    // OCR often reads 8.2 as 3.2 on long trips (8 misread as 3) — before tens-digit upscale.
-    if (legMinutes != null && legMinutes >= 35 && value in 3.0..3.9) {
+    // OCR often reads 8.x as 3.x on trip legs (8 misread as 3 in the ones digit).
+    if (legMinutes != null && legMinutes >= 25 && value in 3.0..3.99) {
         val mph = value / (legMinutes / 60.0)
         val asEight = 8.0 + (value - 3.0)
         if (mph < 8.0 && isPlausibleMilesForMinutes(asEight, legMinutes)) {
             value = asEight
+        }
+    }
+
+    // "3.8 mi" OCR'd as "3.3 mi" (decimal 8→3) on medium urban trip legs (12–20 min band).
+    if (legMinutes != null && legMinutes in 12..20 && value in 2.5..6.5) {
+        val tenths = kotlin.math.round((value * 10.0) % 10.0).toInt()
+        if (tenths == 3) {
+            val asEightTenths = value + 0.5
+            val mph = value / (legMinutes / 60.0)
+            if (mph < 14.0 && asEightTenths in 2.5..15.0 &&
+                isPlausibleMilesForMinutes(asEightTenths, legMinutes)
+            ) {
+                value = asEightTenths
+            }
         }
     }
 
@@ -467,14 +486,11 @@ internal fun parseOcrMiles(raw: String, legMinutes: Int? = null): Double? {
         }
     }
 
-    // Trip "3.8 mi" often OCRs as "8.8 mi" (3 misread as 8) — run after 3.x→8.x upscale.
-    if (legMinutes != null && legMinutes in 20..50 && value in 8.0..8.99) {
-        val firstDecimal = kotlin.math.round(value * 10.0).toInt() % 10
-        if (firstDecimal >= 8) {
-            val alt = value - 5.0
-            if (alt in 3.0..4.5 && isPlausibleMilesForMinutes(alt, legMinutes)) {
-                value = alt
-            }
+    // Trip "3.8 mi" often OCRs as "8.8 mi" (3 misread as 8) — cap below 8.9 (real long-trip miles).
+    if (legMinutes != null && legMinutes in 20..50 && value in 8.0..8.89) {
+        val alt = value - 5.0
+        if (alt in 3.0..4.5 && isPlausibleMilesForMinutes(alt, legMinutes)) {
+            value = alt
         }
     }
 
@@ -579,6 +595,13 @@ internal fun parseTripLegFromLine(line: String): TripLegParse? {
     if (totalMinutes in 8..25 && miles in 10.0..25.0 && !isPlausibleMilesForMinutes(miles, totalMinutes)) {
         val scaled = miles / 10.0
         if (isPlausibleMilesForMinutes(scaled, totalMinutes)) miles = scaled
+    }
+    // Trip "3.8 mi" often OCRs as "8.8 mi" — not 8.9+ long-trip miles.
+    if (totalMinutes in 20..50 && miles in 8.0..8.89) {
+        val alt = miles - 5.0
+        if (alt in 3.0..4.5 && isPlausibleMilesForMinutes(alt, totalMinutes)) {
+            miles = alt
+        }
     }
 
     if (totalMinutes !in 1..600 || miles !in 0.0..200.0) return null
@@ -1044,6 +1067,26 @@ internal fun lineHasTruncatedInwardStrict(line: String, outward: String): Boolea
     ).containsMatchIn(line)
 }
 
+/** Bare map district label ("N1", "CR0", "W6") with no address — not a drop/pickup line. */
+internal fun lineLooksLikeBareMapDistrictLabel(line: String): Boolean {
+    val t = line.trim()
+    if (t.isEmpty() || t.contains(',')) return false
+    if (lineLooksLikeMotorwayMapLabel(t)) return true
+    if (Regex(
+            """\b(Road|Street|St|Ave|Avenue|Lane|Way|Drive|Dr|London|Station|Hospital|Court|Hotel|House|Bakery|Castle|Elgin|Broadway|Wembley|Harrow)\b""",
+            RegexOption.IGNORE_CASE,
+        ).containsMatchIn(t)
+    ) {
+        return false
+    }
+    if (t.length > 8) return false
+    val pcs = extractOuterLondonPostcodes(t).filter { isValidUkOutward(it) }
+    return pcs.size == 1 && Regex(
+        """^[A-Za-z]{1,2}\d{1,2}[A-Za-z]?\s*$""",
+        RegexOption.IGNORE_CASE,
+    ).matches(t.replace(" ", ""))
+}
+
 /** Bare map tokens like "E15" floating near City cards — not offer-card addresses. */
 internal fun lineLooksLikeBareEastMapPostcode(line: String): Boolean {
     val t = line.trim()
@@ -1067,6 +1110,7 @@ internal fun pickBestPostcodeInLineRange(
     val wrappedDistrict = Regex("""^\s*[0-9]\s*[0-9oO][A-Za-z]{2}\s*$""", RegexOption.IGNORE_CASE)
     for (i in startInclusive until endExclusive.coerceAtMost(lines.size)) {
         val line = lines[i]
+        if (lineLooksLikeBareMapDistrictLabel(line)) continue
         val next = lines.getOrNull(i + 1)?.trim().orEmpty()
         // Include next-line inward so "London, NW4"+"4XW" / "SW1E"+"6LB" / "NW1"+"1 8AT" score.
         val combined = when {
@@ -1186,6 +1230,39 @@ fun ocrHasDropAddressAfterTripLeg(ocrText: String): Boolean {
     if (legIndices.size < 2) return false
     for (i in (legIndices[1] + 1) until lines.size) {
         if (lineQualifiesAsDropAddressLine(lines[i])) return true
+    }
+    return false
+}
+
+/** Drop address visible but Uber omitted the postcode (e.g. "Kings Dr, Wembley"). */
+fun ocrHasDropAddressWithoutPostcode(ocrText: String): Boolean {
+    val lines = ocrText.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+    val legIndices = lines.mapIndexedNotNull { index, line ->
+        if (parseTripLegFromLine(line) != null) index else null
+    }
+    if (legIndices.size < 2) return false
+    return dropZoneHasAddressWithoutPostcode(lines, legIndices[1], lines.size)
+}
+
+internal fun dropZoneHasAddressWithoutPostcode(
+    lines: List<String>,
+    dropLegIdx: Int,
+    endExclusive: Int,
+): Boolean {
+    for (i in (dropLegIdx + 1) until endExclusive.coerceAtMost(lines.size)) {
+        val line = lines[i]
+        if (lineLooksLikeBareMapDistrictLabel(line)) continue
+        if (line.equals("Match", ignoreCase = true) || line.equals("Confirm", ignoreCase = true)) {
+            continue
+        }
+        val looksLikeAddress = line.contains(',') ||
+            Regex(
+                """\b(St|Street|Road|Rd|Ave|London|Lane|Way|Drive|Dr|Wembley|Portland|Broadway|Kings|Magistrates|Hospital|Court|Hotel|Drury|Circular)\b""",
+                RegexOption.IGNORE_CASE,
+            ).containsMatchIn(line)
+        if (looksLikeAddress && extractOuterLondonPostcodes(line).isEmpty()) {
+            return true
+        }
     }
     return false
 }
@@ -1403,7 +1480,7 @@ fun resolvePostcodesFromLegZones(ocrText: String): Pair<String, String> {
     }
 
     var drop = pickBestPostcodeInLineRange(lines, dropZoneStart, lines.size, minScore = 60, preferEarliest = false)
-    if (drop.isBlank()) {
+    if (drop.isBlank() && !dropZoneHasAddressWithoutPostcode(lines, dropLegIdx, lines.size)) {
         drop = pickBestPostcodeInLineRange(lines, dropZoneStart, lines.size, minScore = 0, preferEarliest = false)
     }
 
