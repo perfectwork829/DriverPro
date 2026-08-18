@@ -1,6 +1,8 @@
 # Play Store prep path (DriverPro)
 
-Current test builds (v1.17+) ship as **signed release APK** using the **debug keystore** so the client can sideload without a production key. This is intentional for field testing — not for Play submission.
+Current test builds (v1.18+) ship as **signed release APK** using the **debug keystore** so the client can sideload without a production key. This is intentional for field testing — not for Play submission.
+
+**Full Phase 2 plan:** see [`PHASE2_PLAN.md`](PHASE2_PLAN.md).
 
 ## Test APK (client field builds)
 
@@ -10,7 +12,7 @@ Current test builds (v1.17+) ship as **signed release APK** using the **debug ke
 
 Output: `app/build/outputs/apk/release/app-release.apk`
 
-Verify version on device: **History tab** shows `History (v1.17)`.
+Verify version on device: **History tab** shows `History (v1.18)`.
 
 ## OCR quality gate (Phase 2)
 
