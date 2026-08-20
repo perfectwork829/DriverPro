@@ -123,11 +123,16 @@ open class DriverAppAccessibilityService : AccessibilityService() {
                 tryPerformDecisionTap(status, score)
             }
             if (message != null) {
-                // Keep status text at the very top so it never covers offer-card drop addresses.
+                // Left side of the screen — never center/middle (that covers Match) and not
+                // bottom (client reported the good left indicator was wrongly moved down).
                 showLogOverlay(
                     message,
                     x = 40,
-                    y = if (topOnly || x == 0) 24 else 100,
+                    y = when {
+                        topOnly -> 24
+                        message.startsWith("Score:", ignoreCase = true) -> 160
+                        else -> 100
+                    },
                     holdMs = holdMs,
                 )
             }
@@ -486,10 +491,10 @@ open class DriverAppAccessibilityService : AccessibilityService() {
                             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                     PixelFormat.TRANSLUCENT
                 ).apply {
-                    // Bottom-left so the score toast does not cover fare / postcodes on the offer card.
-                    gravity = Gravity.BOTTOM or Gravity.START
+                    // Top-left / mid-left — stays off the Match button and fare/postcode area.
+                    gravity = Gravity.TOP or Gravity.START
                     this.x = x
-                    this.y = y.coerceAtLeast(80)
+                    this.y = y.coerceAtLeast(24)
                 }
 
                 if (!Settings.canDrawOverlays(this)) {

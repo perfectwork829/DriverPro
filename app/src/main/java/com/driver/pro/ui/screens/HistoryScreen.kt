@@ -39,6 +39,7 @@ import com.driver.pro.getRideRequestArray
 import com.driver.pro.getToken
 import com.driver.pro.isRideAfterHistoryClear
 import com.driver.pro.markHistoryCleared
+import com.driver.pro.mergeRideHistory
 import com.driver.pro.network.loadRecentRideRequest
 import com.driver.pro.ui.components.RideRequestCard
 import kotlinx.coroutines.Dispatchers
@@ -89,10 +90,10 @@ fun HistoryScreen() {
             }
             apiResult.fold(
                 onSuccess = { fromApi ->
-                    // Local OCR debug entries never reach the server; always keep them visible for diagnostics.
-                    val localDebug = local.filter { it.raw_text.startsWith("OCR debug", ignoreCase = true) }
-                    val merged = if (fromApi.isNotEmpty()) localDebug + fromApi else local
-                    rideRequestsState.value = applyClearedFilter(merged)
+                    // Keep local OCR/scored saves + server rows (deduped). Old bug dropped local
+                    // scored rides whenever the API returned any data, so after Clear History the
+                    // list looked empty even though scores still appeared on Uber.
+                    rideRequestsState.value = applyClearedFilter(mergeRideHistory(local, fromApi))
                 },
                 onFailure = { e ->
                     rideRequestsState.value = applyClearedFilter(local)

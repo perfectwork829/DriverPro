@@ -89,13 +89,53 @@ fun saveNewRequest(context: Context?, key: String, rideRequest: RideRequest): Bo
     if (context == null) return false
     val sharedPref = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
     val gson = Gson()
+    // Stamp created_at when missing — Clear History hides rows with blank timestamps.
+    val toSave = if (rideRequest.created_at.isBlank()) {
+        rideRequest.copy(
+            created_at = java.time.LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
+        )
+    } else {
+        rideRequest
+    }
     val saved = getRideRequestArray(context, key)?.toMutableList() ?: mutableListOf()
-    saved.add(rideRequest)
+    saved.add(toSave)
     val trimmed = if (saved.size > MAX_STORED_RIDES) saved.takeLast(MAX_STORED_RIDES) else saved
     // commit() so debug rows survive if the app is killed right after an OCR failure.
     return sharedPref.edit()
         .putString(jsonKey(key), gson.toJson(trimmed))
         .commit()
+}
+
+/**
+ * Merge on-device OCR saves with server history.
+ * Local scored rides must stay visible even when the API returns older rows
+ * (otherwise Clear History + non-empty API → empty History while scores still overlay).
+ */
+fun mergeRideHistory(local: List<RideRequest>, fromApi: List<RideRequest>): List<RideRequest> {
+    fun key(r: RideRequest): String {
+        if (r.id > 0) return "id:${r.id}"
+        return "local:${r.price}:${r.pickup_address_postcode}:${r.dropoff_address_postcode}:" +
+            "${r.final_score}:${r.created_at}:${r.raw_text.take(40)}"
+    }
+    val byKey = LinkedHashMap<String, RideRequest>()
+    for (r in local) {
+        byKey[key(r)] = r
+    }
+    for (r in fromApi) {
+        val k = key(r)
+        val existing = byKey[k]
+        if (existing == null) {
+            byKey[k] = r
+        } else {
+            byKey[k] = r.copy(
+                raw_text = r.raw_text.ifBlank { existing.raw_text },
+                ocr_image_uri = r.ocr_image_uri.ifBlank { existing.ocr_image_uri },
+                created_at = r.created_at.ifBlank { existing.created_at },
+            )
+        }
+    }
+    return byKey.values.toList()
 }
 
 fun checkIfNewRequest(context: Context?, key: String, rideRequest: RideRequest): Boolean {

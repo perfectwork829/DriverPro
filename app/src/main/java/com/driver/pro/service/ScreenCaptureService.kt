@@ -2282,7 +2282,8 @@ class ScreenCaptureService : Service() {
                                 suggestedStatus = scored.acceptedOrRejected,
                                 score = score,
                             )
-                            toastOnMain("Score: $score — waiting for your confirm")
+                            // Score UI is the accessibility overlay only — do not also Toast
+                            // (Toast appears mid-screen over Match and duplicates the overlay).
                         } else if (scored.acceptedOrRejected == 1) {
                             val tapped = captureAndSendTap(
                                 result,
@@ -2295,9 +2296,6 @@ class ScreenCaptureService : Service() {
                                     scored.acceptedOrRejected,
                                     score,
                                     "Score: $score — Accepted (finding button…)",
-                                )
-                                toastOnMain(
-                                    "Score: $score — Accepted, tapping via accessibility",
                                 )
                             }
                         } else if (scored.acceptedOrRejected == -1) {
@@ -2317,9 +2315,6 @@ class ScreenCaptureService : Service() {
                                     score,
                                     "Score: $score — Rejected (finding close…)",
                                 )
-                                toastOnMain(
-                                    "Score: $score — Rejected, tapping via accessibility",
-                                )
                             }
                         } else {
                             val intent = Intent("ACTION_CLICK_CONFIRM").apply {
@@ -2330,7 +2325,6 @@ class ScreenCaptureService : Service() {
                                 setPackage(applicationContext.packageName)
                             }
                             applicationContext.sendBroadcast(intent)
-                            toastOnMain("Score: $score")
                         }
 
                         saveNewRequest(applicationContext, "RIDE-REQUESTS", scored)
@@ -2521,6 +2515,7 @@ class ScreenCaptureService : Service() {
     }
 
     private fun sendAccessibilityFallbackTap(status: Int, score: Int, message: String) {
+        // Single path: a11y receiver taps + shows one score overlay (no parallel Toast / duplicate broadcast).
         applicationContext.sendBroadcast(
             Intent(ACTION_A11Y_TAP_DECISION).apply {
                 putExtra("status", status)
@@ -2529,15 +2524,6 @@ class ScreenCaptureService : Service() {
                 setPackage(applicationContext.packageName)
             },
         )
-        val overlay = Intent("ACTION_CLICK_CONFIRM").apply {
-            putExtra("x", 0)
-            putExtra("y", 0)
-            putExtra("score", score)
-            putExtra("message", message)
-            putExtra("status", status)
-            setPackage(applicationContext.packageName)
-        }
-        applicationContext.sendBroadcast(overlay)
     }
 
     private fun captureAndSendTap(
@@ -2677,7 +2663,6 @@ class ScreenCaptureService : Service() {
         val (screenX, screenY) = mapOcrPointToScreen(tapX, tapY)
         Log.d("MY-BROADCAST", "Dismiss '$label' -> screen tap $screenX,$screenY (ocr $tapX,$tapY)")
         sendTapBroadcast(screenX, screenY, score, status, "Score: $score")
-        toastOnMain("Score: $score")
         return true
     }
 
@@ -2702,7 +2687,6 @@ class ScreenCaptureService : Service() {
             "Dismiss fallback card top-right -> screen tap $screenX,$screenY (ocr $ocrX,$ocrY card=$card)",
         )
         sendTapBroadcast(screenX, screenY, score, status, "Score: $score")
-        toastOnMain("Score: $score")
         return true
     }
 
@@ -2750,7 +2734,6 @@ class ScreenCaptureService : Service() {
                 )
 
                 sendTapBroadcast(screenX, screenY, score, acceptOrReject, "Score: $score")
-                toastOnMain("Score: $score")
                 return true
             }
         }
