@@ -40,6 +40,7 @@ import com.driver.pro.getToken
 import com.driver.pro.isRideAfterHistoryClear
 import com.driver.pro.markHistoryCleared
 import com.driver.pro.mergeRideHistory
+import com.driver.pro.parseRideCreatedAtMs
 import com.driver.pro.network.loadRecentRideRequest
 import com.driver.pro.ui.components.RideRequestCard
 import kotlinx.coroutines.Dispatchers
@@ -78,8 +79,9 @@ fun HistoryScreen() {
             }
             val jwt = getToken(context, "JWT_TOKEN")
             if (jwt.isNullOrBlank()) {
-                rideRequestsState.value = applyClearedFilter(local)
-                if (rideRequestsState.value.isEmpty() && local.isEmpty()) {
+                // Local scored rides are always shown (do not apply clear-filter here).
+                rideRequestsState.value = local
+                if (local.isEmpty()) {
                     loadError.value = "Not signed in — log in to load server history."
                 }
                 isLoading.value = false
@@ -90,14 +92,16 @@ fun HistoryScreen() {
             }
             apiResult.fold(
                 onSuccess = { fromApi ->
-                    // Keep local OCR/scored saves + server rows (deduped). Old bug dropped local
-                    // scored rides whenever the API returned any data, so after Clear History the
-                    // list looked empty even though scores still appeared on Uber.
-                    rideRequestsState.value = applyClearedFilter(mergeRideHistory(local, fromApi))
+                    // Clear History must only hide old *server* rows. Local scored saves always
+                    // stay visible — otherwise slash-format / unparseable API timestamps make
+                    // History look empty while scores still overlay on Uber.
+                    val visibleApi = applyClearedFilter(fromApi)
+                    rideRequestsState.value = mergeRideHistory(local, visibleApi)
                 },
                 onFailure = { e ->
-                    rideRequestsState.value = applyClearedFilter(local)
-                    if (rideRequestsState.value.isEmpty() && local.isEmpty()) {
+                    // Never hide local rows on API failure.
+                    rideRequestsState.value = local
+                    if (local.isEmpty()) {
                         loadError.value = e.message ?: "Could not load history"
                     }
                 },
@@ -141,15 +145,20 @@ fun HistoryScreen() {
     val filteredRideRequest = if (mFilter.value == 1) {
         rideRequestsState.value
             .filter { it.acceptedOrRejected == 1 }
-            .sortedByDescending { it.id }
+            .sortedWith(
+                compareByDescending<RideRequest> { parseRideCreatedAtMs(it.created_at) ?: 0L }
+                    .thenByDescending { it.id },
+            )
     } else {
-        // OCR debug entries first (newest at top), then normal history by id.
+        // Newest first by time (local stamps + server). Debug OCR rows stay on top.
+        val byTime = compareByDescending<RideRequest> { parseRideCreatedAtMs(it.created_at) ?: 0L }
+            .thenByDescending { it.id }
         val debug = rideRequestsState.value
             .filter { it.raw_text.startsWith("OCR debug", ignoreCase = true) }
-            .sortedByDescending { it.created_at }
+            .sortedWith(byTime)
         val rest = rideRequestsState.value
             .filter { !it.raw_text.startsWith("OCR debug", ignoreCase = true) }
-            .sortedByDescending { it.id }
+            .sortedWith(byTime)
         debug + rest
     }
 
@@ -236,8 +245,13 @@ fun HistoryScreen() {
                 )
             }
             filteredRideRequest.isEmpty() -> {
+                val cleared = getHistoryClearedAtMs(context) > 0L
                 Text(
-                    text = "No ride history yet.",
+                    text = if (cleared) {
+                        "No ride history yet. Clear History is on — new scored offers will appear here after the next job."
+                    } else {
+                        "No ride history yet."
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }

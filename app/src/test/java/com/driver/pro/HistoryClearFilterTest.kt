@@ -34,4 +34,13 @@ class HistoryClearFilterTest {
         assertFalse(isRideAfterHistoryClear(ride(""), 1_700_000_000_000L))
         assertTrue(isRideAfterHistoryClear(ride(""), 0L))
     }
+
+    @Test
+    fun parsesScoringApiSlashCreatedAt() {
+        val clearedAt = parseRideCreatedAtMs("2026-08-20 12:00:00")!!
+        // POST /ride-request/ historically returned yyyy/MM/dd — must not be treated as missing.
+        assertTrue(isRideAfterHistoryClear(ride("2026/08/20 12:32:00"), clearedAt))
+        assertFalse(isRideAfterHistoryClear(ride("2026/08/20 11:00:00"), clearedAt))
+        assertTrue(parseRideCreatedAtMs("2026/08/20 12:32:00") != null)
+    }
 }

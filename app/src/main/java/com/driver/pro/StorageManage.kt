@@ -85,19 +85,18 @@ fun getRideRequestArray(context: Context?, key: String): Array<RideRequest>? {
     return list.toTypedArray()
 }
 
+private val localCreatedAtFormatter =
+    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+
 fun saveNewRequest(context: Context?, key: String, rideRequest: RideRequest): Boolean {
     if (context == null) return false
     val sharedPref = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
     val gson = Gson()
-    // Stamp created_at when missing — Clear History hides rows with blank timestamps.
-    val toSave = if (rideRequest.created_at.isBlank()) {
-        rideRequest.copy(
-            created_at = java.time.LocalDateTime.now()
-                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")),
-        )
-    } else {
-        rideRequest
-    }
+    // Always stamp device-local time. Scoring API returns "yyyy/MM/dd ..." which the Clear
+    // History filter could not parse, so newly scored rides vanished from History.
+    val toSave = rideRequest.copy(
+        created_at = java.time.LocalDateTime.now().format(localCreatedAtFormatter),
+    )
     val saved = getRideRequestArray(context, key)?.toMutableList() ?: mutableListOf()
     saved.add(toSave)
     val trimmed = if (saved.size > MAX_STORED_RIDES) saved.takeLast(MAX_STORED_RIDES) else saved
@@ -194,9 +193,11 @@ fun parseRideCreatedAtMs(createdAt: String?): Long? {
     }
     val patterns = listOf(
         "yyyy-MM-dd HH:mm:ss",
+        "yyyy/MM/dd HH:mm:ss", // scoring API (POST /ride-request/) uses slashes
         "yyyy-MM-dd'T'HH:mm:ss",
         "yyyy-MM-dd'T'HH:mm:ss.SSS",
         "yyyy-MM-dd'T'HH:mm:ss.SSSSSS",
+        "yyyy/MM/dd'T'HH:mm:ss",
     )
     for (p in patterns) {
         try {
@@ -206,14 +207,21 @@ fun parseRideCreatedAtMs(createdAt: String?): Long? {
         }
     }
     // Truncate fractional seconds / timezone variants: "2026-08-11T17:30:50.123456+00:00"
-    val normalized = raw.replace(' ', 'T')
+    val normalized = raw.replace(' ', 'T').replace('/', '-')
     return try {
         java.time.OffsetDateTime.parse(normalized).toInstant().toEpochMilli()
     } catch (_: Exception) {
         try {
             java.time.Instant.parse(normalized).toEpochMilli()
         } catch (_: Exception) {
-            null
+            try {
+                java.time.LocalDateTime.parse(
+                    normalized.take(19),
+                    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"),
+                ).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+            } catch (_: Exception) {
+                null
+            }
         }
     }
 }

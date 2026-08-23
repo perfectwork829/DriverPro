@@ -124,7 +124,11 @@ fun SettingsScreen(
         try {
             ContextCompat.startForegroundService(context, serviceIntent)
             captureRunning = true
-            Toast.makeText(context, "Capture started — switch to Driver app", Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                context,
+                "Capture started — must be Entire screen. Switch to Uber Driver.",
+                Toast.LENGTH_LONG,
+            ).show()
         } catch (e: Exception) {
             Log.e("SettingsScreen", "startForegroundService failed", e)
             Toast.makeText(context, "Could not start capture: ${e.message}", Toast.LENGTH_LONG).show()
@@ -141,12 +145,12 @@ fun SettingsScreen(
                 Toast.LENGTH_LONG,
             ).show()
         }
-        if (pendingCaptureAfterNotification) {
-            pendingCaptureAfterNotification = false
-            val pm =
-                context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            screenCaptureLauncher.launch(pm.createScreenCaptureIntent())
-        }
+            if (pendingCaptureAfterNotification) {
+                pendingCaptureAfterNotification = false
+                val pm =
+                    context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                screenCaptureLauncher.launch(screenCapturePermissionIntent(pm))
+            }
     }
 
     fun beginScreenCapture() {
@@ -522,12 +526,13 @@ private fun RequirementGateOverlay(
 }
 
 /**
- * On Android 14+ (API 34), use the system flow that lets the user pick **one app** vs **entire screen**
- * before granting capture. Older versions use the legacy single-step consent.
+ * Always request **entire screen** capture. On Android 14+, [createConfigForUserChoice]
+ * lets drivers pick "Share one app" — that only captures driverPRO, so Uber offers are
+ * never OCR'd, no score appears, and History stays empty (see client video 2026-08-21).
  */
 private fun screenCapturePermissionIntent(pm: MediaProjectionManager): Intent =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-        pm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForUserChoice())
+        pm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
     } else {
         pm.createScreenCaptureIntent()
     }

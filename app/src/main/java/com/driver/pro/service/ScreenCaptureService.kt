@@ -1756,7 +1756,7 @@ class ScreenCaptureService : Service() {
 
         val notification = Notification.Builder(this, channelId)
             .setContentTitle("Capturing screen")
-            .setContentText("Full-screen capture is active — switch to Driver app")
+            .setContentText("Entire-screen capture active — switch to Uber Driver")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
