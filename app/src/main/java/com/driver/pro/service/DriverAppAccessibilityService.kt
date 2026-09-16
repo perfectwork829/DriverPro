@@ -145,12 +145,14 @@ open class DriverAppAccessibilityService : AccessibilityService() {
             if (status != 1 && status != -1) return
             val score = intent.getIntExtra("score", 0)
             val message = intent.getStringExtra("message")
+            val holdMs = intent.getLongExtra("hold_ms", 2800L).coerceIn(800L, 8000L)
             Handler(mainLooper).postDelayed({
                 if (tryPerformDecisionTap(status, score)) {
-                    showLogOverlay(message ?: "Score: $score")
+                    showLogOverlay(message ?: "Score: $score", holdMs = holdMs)
                 } else {
                     showLogOverlay(
                         message ?: "Score: $score — enable accessibility on Driver app and try again",
+                        holdMs = holdMs,
                     )
                 }
             }, 400L)

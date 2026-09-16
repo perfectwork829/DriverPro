@@ -19,6 +19,11 @@ val OCR_CORPUS_CASE_IDS: List<String> = listOf(
     "aug25_ha0_pickup",
     "aug25_no_pickup_pc",
     "aug25_heathrow_ub3",
+    // 25 Aug 2026 client retest
+    "aug25_trip_mi_8_1",
+    "aug25_has_oyj_pickup",
+    "aug25_sw1ww_drop",
+    "aug25_w111_pickup",
 )
 
 data class CorpusFieldResult(

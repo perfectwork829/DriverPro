@@ -40,6 +40,8 @@ import com.driver.pro.network.logRideRequestPayload
 import com.driver.pro.network.rideRequestHttpBody
 import com.driver.pro.network.validateRideBeforeScoring
 import com.driver.pro.saveNewRequest
+import com.driver.pro.utils.formatOfferEarningsLine
+import com.driver.pro.utils.formatScoreOverlayMessage
 import com.google.mlkit.vision.text.Text
 import kotlinx.coroutines.*
 import java.time.LocalTime
@@ -284,7 +286,7 @@ fun extractBestPrice(text: String): Double {
     for (line in text.lineSequence()) {
         if (isAddonFareLine(line)) continue
         val normalized = normalizeOcrCurrencyLine(line)
-        Regex("""[£$]\s*($OCR_DIGIT{2,3})(?!\d|[.,])""").findAll(normalized).forEach { m ->
+        Regex("""[£$]\s*($OCR_DIGIT{2,4})(?!\d|[.,])""").findAll(normalized).forEach { m ->
             val raw = m.groupValues[1].fixOcrDigits().toIntOrNull() ?: return@forEach
             normalizeFareWithoutDecimal(raw.toDouble())?.let { poundWholeAmounts.add(it) }
         }
@@ -511,7 +513,7 @@ fun fixOcrPostcodeDistrict(part: String): String = fixOcrNumberPart(part)
 
 fun extractOuterLondonPostcodes(text: String): List<String> {
     // Join Uber-wrapped postcodes: "London, NW4" / "4XW" and "London, SW1E" / "6LB"
-    val text = joinSplitPostcodeLines(text)
+    val text = joinSplitPostcodeLines(normalizeOcrOfferText(text))
 
     // London + common M25 / home-counties areas (Guildford GU, Redhill RH, etc.)
     val londonPrefixes = listOf(
@@ -1007,6 +1009,7 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
         val lineEnd = text.indexOf('\n', match.range.first).let { if (it < 0) text.length else it }
         val sourceLine = text.substring(lineStart, lineEnd)
         if (lineAlreadyHasStructuredPostcode(sourceLine)) return@forEach
+        if (lineLooksLikeBareMapDistrictLabel(sourceLine)) return@forEach
         if (lineLooksLikeMotorwayMapLabel(sourceLine)) return@forEach
         if (lineLooksLikeBareEastMapPostcode(sourceLine)) return@forEach
         if (isInsideStationParentheses(sourceLine, match.range.first)) return@forEach
@@ -1206,10 +1209,13 @@ fun isReserved(ocrText: String): Boolean {
 }
 
 @SuppressLint("DefaultLocale")
-fun parseRideInfo(ocrText: String, visionText: Text? = null): RideRequest {
+fun parseRideInfo(ocrTextRaw: String, visionText: Text? = null): RideRequest {
 
+    val ocrText = normalizeOcrOfferText(ocrTextRaw)
     var accuracy = 100
-    val ocrLines = visionText?.let { collectOcrLines(it) }.orEmpty()
+    val ocrLines = visionText?.let { collectOcrLines(it) }
+        ?.map { it.copy(text = normalizeOcrOfferText(it.text)) }
+        .orEmpty()
     val structured = if (ocrLines.isNotEmpty()) {
         parseStructuredFromLines(ocrLines, ocrText)
     } else {
@@ -2265,6 +2271,7 @@ class ScreenCaptureService : Service() {
                             accuracy = ride.accuracy,
                         )
                         val score = scored.final_score ?: 0
+                        val scoreOverlay = formatScoreOverlayMessage(score, scored)
                         val lowConfidence = scored.accuracy < LOW_OCR_CONFIDENCE_THRESHOLD
                         val needsManualConfirm =
                             lowConfidence &&
@@ -2272,12 +2279,14 @@ class ScreenCaptureService : Service() {
 
                         if (needsManualConfirm) {
                             val action = if (scored.acceptedOrRejected == 1) "Accept" else "Reject"
+                            val earnings = formatOfferEarningsLine(scored)
                             requestManualConfirm(
                                 title = "Low confidence — confirm $action?",
                                 detail = "Score: $score · OCR ${scored.accuracy}%\n" +
                                     "£${"%.2f".format(scored.price)} · " +
                                     "${scored.pickup_address_postcode ?: "?"} → " +
                                     "${scored.dropoff_address_postcode ?: "?"}\n" +
+                                    (if (earnings != null) "$earnings\n" else "") +
                                     "Suggested: $action",
                                 suggestedStatus = scored.acceptedOrRejected,
                                 score = score,
@@ -2290,12 +2299,17 @@ class ScreenCaptureService : Service() {
                                 acceptTapKeys,
                                 score,
                                 scored.acceptedOrRejected,
+                                scoreOverlay,
                             )
                             if (!tapped) {
                                 sendAccessibilityFallbackTap(
                                     scored.acceptedOrRejected,
                                     score,
-                                    "Score: $score — Accepted (finding button…)",
+                                    formatScoreOverlayMessage(
+                                        score,
+                                        scored,
+                                        suffix = "Accepted (finding button…)",
+                                    ),
                                 )
                             }
                         } else if (scored.acceptedOrRejected == -1) {
@@ -2303,25 +2317,32 @@ class ScreenCaptureService : Service() {
                                 result,
                                 score,
                                 scored.acceptedOrRejected,
+                                scoreOverlay,
                             ) || captureAndSendTap(
                                 result,
                                 rejectTapKeys,
                                 score,
                                 scored.acceptedOrRejected,
+                                scoreOverlay,
                             )
                             if (!tapped) {
                                 sendAccessibilityFallbackTap(
                                     scored.acceptedOrRejected,
                                     score,
-                                    "Score: $score — Rejected (finding close…)",
+                                    formatScoreOverlayMessage(
+                                        score,
+                                        scored,
+                                        suffix = "Rejected (finding close…)",
+                                    ),
                                 )
                             }
                         } else {
                             val intent = Intent("ACTION_CLICK_CONFIRM").apply {
                                 putExtra("x", 0)
                                 putExtra("y", 0)
-                                putExtra("message", "Score: $score")
+                                putExtra("message", scoreOverlay)
                                 putExtra("status", scored.acceptedOrRejected)
+                                putExtra("hold_ms", 3200L)
                                 setPackage(applicationContext.packageName)
                             }
                             applicationContext.sendBroadcast(intent)
@@ -2509,6 +2530,7 @@ class ScreenCaptureService : Service() {
             putExtra("score", score)
             putExtra("message", message)
             putExtra("status", status)
+            putExtra("hold_ms", 3200L)
             setPackage(applicationContext.packageName)
         }
         applicationContext.sendBroadcast(intent)
@@ -2521,6 +2543,7 @@ class ScreenCaptureService : Service() {
                 putExtra("status", status)
                 putExtra("score", score)
                 putExtra("message", message)
+                putExtra("hold_ms", 3200L)
                 setPackage(applicationContext.packageName)
             },
         )
@@ -2531,9 +2554,10 @@ class ScreenCaptureService : Service() {
         keys: List<String>,
         score: Int,
         status: Int,
+        message: String,
     ): Boolean {
         for (key in keys) {
-            if (captureAndSendConfirm(visionText, key, score, status)) return true
+            if (captureAndSendConfirm(visionText, key, score, status, message)) return true
         }
         return false
     }
@@ -2657,12 +2681,18 @@ class ScreenCaptureService : Service() {
         return maxRight to minTop
     }
 
-    private fun sendDismissTapAtOcrRect(rect: Rect, label: String, score: Int, status: Int): Boolean {
+    private fun sendDismissTapAtOcrRect(
+        rect: Rect,
+        label: String,
+        score: Int,
+        status: Int,
+        message: String,
+    ): Boolean {
         val tapX = (rect.left + rect.width() * 0.85).toInt().coerceIn(rect.left, rect.right)
         val tapY = (rect.top + rect.height() * 0.5).toInt().coerceIn(rect.top, rect.bottom)
         val (screenX, screenY) = mapOcrPointToScreen(tapX, tapY)
         Log.d("MY-BROADCAST", "Dismiss '$label' -> screen tap $screenX,$screenY (ocr $tapX,$tapY)")
-        sendTapBroadcast(screenX, screenY, score, status, "Score: $score")
+        sendTapBroadcast(screenX, screenY, score, status, message)
         return true
     }
 
@@ -2671,6 +2701,7 @@ class ScreenCaptureService : Service() {
         visionText: Text,
         score: Int,
         status: Int,
+        message: String,
     ): Boolean {
         val card = findOfferCardBounds(visionText)
         val (frameRight, frameTop) = ocrFrameBounds(visionText)
@@ -2686,12 +2717,17 @@ class ScreenCaptureService : Service() {
             "MY-BROADCAST",
             "Dismiss fallback card top-right -> screen tap $screenX,$screenY (ocr $ocrX,$ocrY card=$card)",
         )
-        sendTapBroadcast(screenX, screenY, score, status, "Score: $score")
+        sendTapBroadcast(screenX, screenY, score, status, message)
         return true
     }
 
     /** Top-right close control is often a lone “X” / “×” with no word “close”. */
-    private fun captureAndSendDismiss(visionText: Text, score: Int, status: Int): Boolean {
+    private fun captureAndSendDismiss(
+        visionText: Text,
+        score: Int,
+        status: Int,
+        message: String,
+    ): Boolean {
         val card = findOfferCardBounds(visionText)
             ?: OfferCardBounds(
                 left = 0,
@@ -2701,12 +2737,18 @@ class ScreenCaptureService : Service() {
             )
         val candidates = collectDismissCandidates(visionText)
         pickTopRightDismissCandidate(candidates, card)?.let { best ->
-            return sendDismissTapAtOcrRect(best.rect, best.label, score, status)
+            return sendDismissTapAtOcrRect(best.rect, best.label, score, status, message)
         }
-        return captureAndSendTopRightFallbackDismiss(visionText, score, status)
+        return captureAndSendTopRightFallbackDismiss(visionText, score, status, message)
     }
 
-    private fun captureAndSendConfirm(visionText: Text, key: String, score: Int, acceptOrReject: Int = -1): Boolean {
+    private fun captureAndSendConfirm(
+        visionText: Text,
+        key: String,
+        score: Int,
+        acceptOrReject: Int = -1,
+        message: String = "Score: $score",
+    ): Boolean {
         val pattern = Regex("\\b${Regex.escape(key)}\\b", RegexOption.IGNORE_CASE)
 
         fun lineLooksLikeMatchLabel(raw: String): Boolean {
@@ -2733,7 +2775,7 @@ class ScreenCaptureService : Service() {
                     "Match key='$key' on line='$text' -> screen tap $screenX,$screenY (ocr $x0,$y0)",
                 )
 
-                sendTapBroadcast(screenX, screenY, score, acceptOrReject, "Score: $score")
+                sendTapBroadcast(screenX, screenY, score, acceptOrReject, message)
                 return true
             }
         }

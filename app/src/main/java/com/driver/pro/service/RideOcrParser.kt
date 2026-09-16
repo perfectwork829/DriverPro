@@ -13,6 +13,46 @@ internal fun String.fixOcrDigits(): String = this
 /** Character class for OCR-noisy digits in fares, miles, and postcodes. */
 internal const val OCR_DIGIT = """[0-9ilLoO]"""
 
+/**
+ * Repair common ML Kit garble on Uber offer dumps before fare/postcode parsing.
+ * Safe to run more than once.
+ */
+internal fun normalizeOcrOfferText(text: String): String {
+    var out = text
+    // HAS OYJ → HA9 0YJ (9 misread as S on Costco / Wembley cards).
+    out = out.replace(
+        Regex("""\bHAS\s+([O0])([A-Za-z]{2})\b""", RegexOption.IGNORE_CASE),
+        "HA9 0$2",
+    )
+    // SW1Ww 8BB → SW1W 8BB (duplicated sector letter).
+    out = out.replace(
+        Regex(
+            """\b(SW|WC|EC|NW|SE)(\d)([A-Za-z])\3\s+([0-9oO][A-Za-z]{2})\b""",
+            RegexOption.IGNORE_CASE,
+        ),
+        "$1$2$3 $4",
+    )
+    // W111 → W11 1 (inward digit jammed onto W11 / E14 / N12). Do not split N12 / W12.
+    out = out.replace(
+        Regex("""\b(W|E|N)(1[1-4])(\d)\b"""),
+        "$1$2 $3",
+    )
+    // NW21LS / HA9GDE jammed full postcode (missing space before inward).
+    out = out.replace(
+        Regex(
+            """\b(NW|SW|SE|EC|WC|HA|CR|W|N|E)(\d{1,2})(\d[A-Za-z]{2})\b""",
+            RegexOption.IGNORE_CASE,
+        ),
+        "$1$2 $3",
+    )
+    // HA9 GDE → HA9 0DE (inward leading 0 misread as G).
+    out = out.replace(
+        Regex("""\b(HA9)\s+G([A-Za-z]{2})\b""", RegexOption.IGNORE_CASE),
+        "$1 0$2",
+    )
+    return out
+}
+
 /** One OCR text line with vertical position (top = smaller Y). */
 data class OcrLine(val text: String, val top: Int, val left: Int = 0)
 
@@ -454,11 +494,16 @@ internal fun parseOcrMiles(raw: String, legMinutes: Int? = null): Double? {
         }
     }
 
-    // OCR often reads 8.x as 3.x on trip legs (8 misread as 3 in the ones digit).
-    if (legMinutes != null && legMinutes >= 25 && value in 3.0..3.99) {
+    // OCR often reads 8.x as 3.x on long trip legs (8 misread as 3 in the ones digit).
+    // Keep plausible 3.x on ~25 min central hops (W2→NW1 3.1 mi) — only upscale when
+    // the 3.x reading is crawling (<6 mph) or the leg is long enough that 8.x is the
+    // normal Uber card (27+ min, e.g. 27 min 3.2 → 8.2).
+    if (legMinutes != null && value in 3.0..3.99) {
         val mph = value / (legMinutes / 60.0)
         val asEight = 8.0 + (value - 3.0)
-        if (mph < 8.0 && isPlausibleMilesForMinutes(asEight, legMinutes)) {
+        val crawling = mph < 6.0 && legMinutes >= 25
+        val longLegLikelyEight = legMinutes >= 27 && mph < 8.0
+        if ((crawling || longLegLikelyEight) && isPlausibleMilesForMinutes(asEight, legMinutes)) {
             value = asEight
         }
     }
@@ -486,10 +531,12 @@ internal fun parseOcrMiles(raw: String, legMinutes: Int? = null): Double? {
         }
     }
 
-    // Trip "3.8 mi" often OCRs as "8.8 mi" (3 misread as 8) — cap below 8.9 (real long-trip miles).
+    // Trip "3.8 mi" often OCRs as "8.8 mi" (3 misread as 8). Only downscale when 8.x
+    // is implausibly fast — real 44–47 min / 8.1–8.7 mi cards must stay 8.x.
     if (legMinutes != null && legMinutes in 20..50 && value in 8.0..8.89) {
+        val mph = value / (legMinutes / 60.0)
         val alt = value - 5.0
-        if (alt in 3.0..4.5 && isPlausibleMilesForMinutes(alt, legMinutes)) {
+        if (mph > 20.0 && alt in 3.0..4.5 && isPlausibleMilesForMinutes(alt, legMinutes)) {
             value = alt
         }
     }
@@ -596,10 +643,11 @@ internal fun parseTripLegFromLine(line: String): TripLegParse? {
         val scaled = miles / 10.0
         if (isPlausibleMilesForMinutes(scaled, totalMinutes)) miles = scaled
     }
-    // Trip "3.8 mi" often OCRs as "8.8 mi" — not 8.9+ long-trip miles.
+    // Trip "3.8 mi" often OCRs as "8.8 mi" — only when 8.x is implausibly fast.
     if (totalMinutes in 20..50 && miles in 8.0..8.89) {
+        val mph = miles / (totalMinutes / 60.0)
         val alt = miles - 5.0
-        if (alt in 3.0..4.5 && isPlausibleMilesForMinutes(alt, totalMinutes)) {
+        if (mph > 20.0 && alt in 3.0..4.5 && isPlausibleMilesForMinutes(alt, totalMinutes)) {
             miles = alt
         }
     }
@@ -745,7 +793,7 @@ private fun parseFareFromSingleLine(rawLine: String): Double? {
         "${whole}.${frac}".toDoubleOrNull()?.let { candidates.add(it) }
     }
 
-    Regex("""[£$]\s*($OCR_DIGIT{2,3})(?!\d|[.,])""").findAll(line).forEach { m ->
+    Regex("""[£$]\s*($OCR_DIGIT{2,4})(?!\d|[.,])""").findAll(line).forEach { m ->
         val raw = m.groupValues[1].fixOcrDigits().toIntOrNull() ?: return@forEach
         normalizeFareWithoutDecimal(raw.toDouble())?.let { candidates.add(it) }
     }
@@ -767,9 +815,10 @@ private fun parseFareFromSingleLine(rawLine: String): Double? {
     return candidates.filter { it in 3.0..500.0 }.maxOrNull()
 }
 
-/** £743 / 743 without decimal → £7.43 when in typical trip-fare range. */
+/** £743 / £1719 without decimal → £7.43 / £17.19 when in typical trip-fare range. */
 fun normalizeFareWithoutDecimal(raw: Double): Double? {
     return when {
+        raw in 1000.0..9999.0 -> raw / 100.0
         raw in 100.0..999.0 -> raw / 100.0
         raw in 3.0..500.0 -> raw
         else -> null
@@ -1067,10 +1116,10 @@ internal fun lineHasTruncatedInwardStrict(line: String, outward: String): Boolea
     ).containsMatchIn(line)
 }
 
-/** Bare map district label ("N1", "CR0", "W6") with no address — not a drop/pickup line. */
+/** Bare map district label ("N1", "NI", "CR0", "W6") with no address — not a drop/pickup line. */
 internal fun lineLooksLikeBareMapDistrictLabel(line: String): Boolean {
     val t = line.trim()
-    if (t.isEmpty() || t.contains(',')) return false
+    if (t.isEmpty() || t.contains(',') || t.contains(' ')) return false
     if (lineLooksLikeMotorwayMapLabel(t)) return true
     if (Regex(
             """\b(Road|Street|St|Ave|Avenue|Lane|Way|Drive|Dr|London|Station|Hospital|Court|Hotel|House|Bakery|Castle|Elgin|Broadway|Wembley|Harrow)\b""",
@@ -1080,11 +1129,11 @@ internal fun lineLooksLikeBareMapDistrictLabel(line: String): Boolean {
         return false
     }
     if (t.length > 8) return false
-    val pcs = extractOuterLondonPostcodes(t).filter { isValidUkOutward(it) }
-    return pcs.size == 1 && Regex(
-        """^[A-Za-z]{1,2}\d{1,2}[A-Za-z]?\s*$""",
-        RegexOption.IGNORE_CASE,
-    ).matches(t.replace(" ", ""))
+    val compact = t.uppercase()
+        .replace('I', '1').replace('L', '1').replace('O', '0')
+    // Single token district (OCR "NI" → N1). Do not call extractOuterLondonPostcodes here
+    // (that function consults this predicate).
+    return Regex("""^[A-Z]{1,2}\d{1,2}[A-Z]?$""").matches(compact)
 }
 
 /** Bare map tokens like "E15" floating near City cards — not offer-card addresses. */

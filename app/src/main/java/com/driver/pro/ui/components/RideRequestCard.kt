@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.driver.pro.RideRequest
+import com.driver.pro.utils.formatOfferEarningsLine
 
 fun showResult(acceptedOrRejected: Int): String {
     return when (acceptedOrRejected) {
@@ -83,6 +84,15 @@ fun RideRequestCard(rideRequest: RideRequest) {
             Text("Drop: ${rideRequest.trip_time_minutes}(${rideRequest.trip_distance_value})(${rideRequest.dropoff_address_postcode})", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
             Spacer(modifier = Modifier.height(4.dp))
             Text("Score: ${rideRequest.final_score ?: "N/A"} - ${showResult(rideRequest.acceptedOrRejected)}", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
+            formatOfferEarningsLine(rideRequest)?.let { earnings ->
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    earnings,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
 
             if (rideRequest.raw_text.isNotBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))

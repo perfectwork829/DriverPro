@@ -1,0 +1,8 @@
+{
+  "id": "aug25_has_oyj_pickup",
+  "note": "HAS OYJ is HA9 0YJ",
+  "price": 8.16,
+  "pickup_postcode": "HA9",
+  "drop_postcode": "NW10",
+  "must_score": true
+}

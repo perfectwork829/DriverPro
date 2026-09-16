@@ -1,0 +1,9 @@
+{
+  "id": "aug25_trip_mi_8_1",
+  "note": "Do not downscale real 8.1 mi / 47 min to 3.1",
+  "price": 15.79,
+  "pickup_postcode": "NW10",
+  "drop_postcode": "SW1H",
+  "trip_miles": 8.1,
+  "must_score": true
+}

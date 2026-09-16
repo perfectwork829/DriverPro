@@ -875,14 +875,28 @@ class RideOcrParsingTest {
     }
 
     @Test
-    fun parseOcrMiles_fixes_8_8_to_3_8_directly() {
-        assertEquals(3.8, parseOcrMiles("8.8", 39)!!, 0.001)
+    fun parseOcrMiles_keeps_8_8_when_speed_is_plausible() {
+        // 8.8 mi / 39 min ≈ 13.5 mph — real long urban trip (Aug 25 8.1–8.7 mi cards).
+        assertEquals(8.8, parseOcrMiles("8.8", 39)!!, 0.001)
     }
 
     @Test
-    fun tripLeg_fixes_8_8_miles_to_3_8_on_medium_trip() {
+    fun parseOcrMiles_fixes_8_8_to_3_8_when_implausibly_fast() {
+        // 8.8 mi / 20 min ≈ 26 mph — 3 misread as 8.
+        assertEquals(3.8, parseOcrMiles("8.8", 20)!!, 0.001)
+    }
+
+    @Test
+    fun tripLeg_keeps_8_8_miles_on_long_urban_trip() {
         val parsed = parseTripLegFromLine("39 mins (8.8 mi)")
         assertEquals(39, parsed?.minutes)
+        assertEquals(8.8, parsed?.miles ?: 0.0, 0.001)
+    }
+
+    @Test
+    fun tripLeg_fixes_8_8_miles_to_3_8_when_too_fast() {
+        val parsed = parseTripLegFromLine("20 mins (8.8 mi)")
+        assertEquals(20, parsed?.minutes)
         assertEquals(3.8, parsed?.miles ?: 0.0, 0.001)
     }
 
