@@ -395,4 +395,50 @@ class Aug25RetestBatchTest {
         assertEquals(4.87, ride.price, 0.05)
         assertEquals("W11", ride.pickup_address_postcode)
     }
+
+    @Test
+    fun id2922_truncated_sw15_6_jammed_sw156() {
+        val text = """
+            A316
+            2 UberX Exclusive
+            £20.86
+            4.97
+            Kingston upon
+            Thames
+            8 min (2.3 mi)
+            £l17 est. holiday entitlement included
+            Terminal 3. Level 1. Zone 1-4 (Terminal
+            Parking). TW6 1QG
+            36 mins (15.2 mi)
+            5 Cedar Mews. London. SW156
+            Confirm
+        """.trimIndent()
+        val ride = parse(text)
+        dump("20.86-SW156", ride)
+        assertEquals(20.86, ride.price, 0.05)
+        assertEquals("TW6", ride.pickup_address_postcode)
+        assertEquals("SW15", ride.dropoff_address_postcode)
+        assertEquals(2.3, ride.pickup_distance_value!!, 0.1)
+        assertEquals(15.2, ride.trip_distance_value!!, 0.1)
+        assertNull(validateRideBeforeScoring(ride, text))
+    }
+
+    @Test
+    fun id2922_truncated_sw15_6_spaced_as_on_card() {
+        val text = """
+            UberX Exclusive
+            £20.86
+            ★ 4.97
+            8 min (2.3 mi)
+            Terminal 3, Level 1, Zone 1-4 (Terminal Parking), TW6 1QG
+            36 mins (15.2 mi)
+            5 Cedar Mews, London, SW15 6
+            Confirm
+        """.trimIndent()
+        val ride = parse(text)
+        dump("20.86-SW15-6", ride)
+        assertEquals("TW6", ride.pickup_address_postcode)
+        assertEquals("SW15", ride.dropoff_address_postcode)
+        assertNull(validateRideBeforeScoring(ride, text))
+    }
 }

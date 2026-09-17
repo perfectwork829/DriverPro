@@ -922,9 +922,16 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
         """\b([A-Za-z]{1,2})($districtPart)\s+($inwardDigit)(?![A-Za-z0-9])""",
         RegexOption.IGNORE_CASE,
     )
+    // Same when Uber/OCR jams the remaining digit: "SW156" / "W148".
+    val truncatedJammedRegex = Regex(
+        """\b([A-Za-z]{1,2})([0-9iIlLoOzZ]{2})($inwardDigit)(?![A-Za-z0-9])""",
+        RegexOption.IGNORE_CASE,
+    )
 
     fun lineAlreadyHasStructuredPostcode(line: String): Boolean {
-        return fullPostcodeRegex.containsMatchIn(line) || truncatedInwardRegex.containsMatchIn(line)
+        return fullPostcodeRegex.containsMatchIn(line) ||
+            truncatedInwardRegex.containsMatchIn(line) ||
+            truncatedJammedRegex.containsMatchIn(line)
     }
 
     fun isInsideStationParentheses(line: String, matchStart: Int): Boolean {
@@ -982,6 +989,12 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
     }
 
     truncatedInwardRegex.findAll(text).forEach { match ->
+        val lineStart = text.lastIndexOf('\n', (match.range.first - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+        val lineEnd = text.indexOf('\n', match.range.first).let { if (it < 0) text.length else it }
+        val sourceLine = text.substring(lineStart, lineEnd)
+        addOutward(match.range.first, match.groupValues[1].uppercase(), match.groupValues[2], inferSwFromW = false, sourceLine)
+    }
+    truncatedJammedRegex.findAll(text).forEach { match ->
         val lineStart = text.lastIndexOf('\n', (match.range.first - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
         val lineEnd = text.indexOf('\n', match.range.first).let { if (it < 0) text.length else it }
         val sourceLine = text.substring(lineStart, lineEnd)

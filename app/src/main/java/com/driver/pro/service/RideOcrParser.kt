@@ -50,6 +50,18 @@ internal fun normalizeOcrOfferText(text: String): String {
         Regex("""\b(HA9)\s+G([A-Za-z]{2})\b""", RegexOption.IGNORE_CASE),
         "$1 0$2",
     )
+    // Truncated inward jammed onto the outward: SW156 → SW15 6, W148 → W14 8, MK107 → MK10 7.
+    // Uber often clips the last two inward letters on the card (SW15 6 / SW1H 0).
+    // Only split when the 2-digit outward is a real UK district so A316 / M25 stay untouched.
+    out = out.replace(Regex("""\b([A-Za-z]{1,2})(\d{2})(\d)\b""")) { m ->
+        val area = m.groupValues[1].uppercase()
+        val outward = area + m.groupValues[2]
+        if (area in UK_POSTCODE_AREAS && isValidUkOutward(outward)) {
+            "${m.groupValues[1]}${m.groupValues[2]} ${m.groupValues[3]}"
+        } else {
+            m.value
+        }
+    }
     return out
 }
 
@@ -1097,9 +1109,24 @@ internal fun lineHasFullInwardStrict(line: String, outward: String): Boolean {
 }
 
 internal fun lineHasTruncatedInwardStrict(line: String, outward: String): Boolean {
-    if (!lineContainsOutwardStrict(line, outward)) return false
+    if (!isValidUkOutward(outward)) return false
     val letters = outward.takeWhile { it.isLetter() }
     val district = outward.drop(letters.length)
+    if (letters.isEmpty() || district.isEmpty()) return false
+    // Jammed truncated must be checked BEFORE lineContainsOutwardStrict: that helper
+    // requires (?!\d) after the district, so SW156 never "contains" SW15.
+    // Only 2-digit districts (SW15, W14, NW10, MK10) — NW1 must not steal NW10.
+    val jammedDistrict = district.filter { it.isDigit() }
+    if (jammedDistrict.length >= 2) {
+        if (Regex(
+                """\b${Regex.escape(outward)}\d(?![A-Za-z0-9])""",
+                RegexOption.IGNORE_CASE,
+            ).containsMatchIn(line)
+        ) {
+            return true
+        }
+    }
+    if (!lineContainsOutwardStrict(line, outward)) return false
     val districtPat = buildString {
         for (ch in district) {
             when {
@@ -1181,6 +1208,11 @@ internal fun pickBestPostcodeInLineRange(
                 // Truncated "SW7 2" / "W8 4" / "W4 1" on short address lines without comma
                 Regex(
                     """\b${Regex.escape(pc)}\s+\d(?![A-Za-z0-9])""",
+                    RegexOption.IGNORE_CASE,
+                ).containsMatchIn(combined) -> 80
+                // Jammed truncated: "SW156" / "W148" (card clipped the inward letters).
+                Regex(
+                    """\b${Regex.escape(pc)}\d(?![A-Za-z0-9])""",
                     RegexOption.IGNORE_CASE,
                 ).containsMatchIn(combined) -> 80
                 // Postcode-only truncated line: "W4 1"
@@ -1408,7 +1440,7 @@ internal fun assignPostcodesByVisualTop(lines: List<OcrLine>, pickupLegIdx: Int)
         val addressLike = line.text.contains(',') ||
             line.text.contains("London", ignoreCase = true) ||
             Regex(
-                """\b(Road|Street|St|Ave|Lane|Way|Drive|Hotel|Inn|Walk|Close|Cl|Gardens|Station)\b""",
+                """\b(Road|Street|St|Ave|Lane|Way|Drive|Hotel|Inn|Walk|Close|Cl|Gardens|Station|Mews|Grove|House|Avenue)\b""",
                 RegexOption.IGNORE_CASE,
             ).containsMatchIn(line.text)
         val pc = pickBestPostcodeInLineRange(listOf(line.text), 0, 1, minScore = 60)
