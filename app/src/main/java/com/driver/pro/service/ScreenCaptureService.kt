@@ -105,6 +105,39 @@ internal fun joinSplitPostcodeLines(text: String): String {
         val prevInward = if (out.isNotEmpty()) inwardOnly.find(out.last().trim()) else null
         val trailOnCurrent = trailingOutward.find(line.trim())
         when {
+            inwardOnly.matches(line.trim()) -> {
+                val inward = inwardOnly.find(line.trim())!!.groupValues[1]
+                var joined = false
+                for (j in 1..4) {
+                    val cand = lines.getOrNull(i + j) ?: break
+                    val candTrim = cand.trim()
+                    if (parseTripLegFromLine(candTrim) != null) break
+                    if (candTrim.equals("Match", ignoreCase = true) ||
+                        candTrim.equals("Confirm", ignoreCase = true)
+                    ) {
+                        break
+                    }
+                    if (inwardOnly.matches(candTrim) || wrappedDistrictInward.matches(candTrim)) {
+                        continue
+                    }
+                    val trailCand = trailingOutward.find(candTrim)
+                    val alreadyHasInward = Regex(
+                        """\s+[0-9oO][A-Za-z]{2}\s*$""",
+                        RegexOption.IGNORE_CASE,
+                    ).containsMatchIn(candTrim)
+                    if (trailCand != null && !alreadyHasInward) {
+                        for (k in 1 until j) out.add(lines[i + k])
+                        out.add(candTrim + " " + inward)
+                        i += j + 1
+                        joined = true
+                        break
+                    }
+                }
+                if (!joined) {
+                    out.add(line)
+                    i += 1
+                }
+            }
             prevInward != null && trailOnCurrent != null &&
                 !Regex("""\s+[0-9oO][A-Za-z]{2}\s*$""", RegexOption.IGNORE_CASE)
                     .containsMatchIn(line.trim()) -> {
@@ -654,6 +687,11 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
                 lineUpper.contains("PONDERS END") || lineUpper.contains("BROXBOURNE") ||
                 lineUpper.contains("ENFIELD TOWN")
 
+        // NW10 OCR'd as NW0 (tens digit 1 dropped) on Willesden / Crediton Road cards.
+        if (normalizedPrefix == "NW" && districtNum == 0) {
+            outwardFromFullPostcode("NW", 10, letterPart)?.let { return it }
+        }
+
         // S14 / N0 / NO → SL4 / N15 / EN* (letter–digit OCR confusion in outward district).
         if (normalizedPrefix == "N" && districtNum == 0) {
             if (enfieldLine()) {
@@ -1010,11 +1048,15 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
     outwardRegex.findAll(text).forEach { match ->
         val prefix = match.groupValues[1].uppercase()
         val districtRaw = match.groupValues[2]
-        // Require a real digit, or a single OCR digit-letter on London areas (El→E1, not Pol→PO1).
+        // Require a real digit, or OCR digit-letters on London areas (El→E1, Wll→W11).
         if (!districtRaw.any { it.isDigit() }) {
-            if (districtRaw.length != 1 || districtRaw[0] !in "iIlLoOzZ") return@forEach
+            if (districtRaw.isEmpty() || districtRaw.any { it !in "iIlLoOzZ" } || districtRaw.length > 2) {
+                return@forEach
+            }
             val londonAreas = setOf("E", "EC", "N", "NW", "SE", "SW", "W", "WC", "CR", "BR")
-            if (prefix !in londonAreas) return@forEach
+            val wiStyle = prefix.length == 2 && prefix[0] in setOf('E', 'N', 'S', 'W') &&
+                prefix[1] in setOf('I', 'L')
+            if (prefix !in londonAreas && !wiStyle) return@forEach
         }
         val numberPart = fixOcrNumberPart(districtRaw).toIntOrNull() ?: return@forEach
         val letter = match.groupValues[3]
@@ -1047,6 +1089,11 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
         }
         val codes = mutableListOf<String>()
         normalizeOutward(prefix, numberPart, letter, sourceLine)?.let { codes.add(it) }
+        if (codes.isEmpty()) {
+            outwardFromDistrictParts(prefix, districtRaw + letter, sourceLine)?.let { recovered ->
+                if (recovered !in codes) codes.add(recovered)
+            }
+        }
         // Only infer SW when outward is numeric-only (e.g. W7). W1W/W1J must not become SW1W.
         if (prefix == "W" && prefix.length == 1 && letter.isEmpty()) {
             normalizeOutward("SW", numberPart, letter, sourceLine)?.let { sw ->
@@ -1224,7 +1271,7 @@ fun isReserved(ocrText: String): Boolean {
 @SuppressLint("DefaultLocale")
 fun parseRideInfo(ocrTextRaw: String, visionText: Text? = null): RideRequest {
 
-    val ocrText = normalizeOcrOfferText(ocrTextRaw)
+    val ocrText = joinSplitPostcodeLines(normalizeOcrOfferText(ocrTextRaw))
     var accuracy = 100
     val ocrLines = visionText?.let { collectOcrLines(it) }
         ?.map { it.copy(text = normalizeOcrOfferText(it.text)) }
@@ -1425,6 +1472,14 @@ fun parseRideInfo(ocrTextRaw: String, visionText: Text? = null): RideRequest {
     var dropoffPostcode = structured?.dropPostcode.orEmpty()
 
     val zonePostcodes = resolvePostcodesFromLegZones(ocrText)
+    fun preferLongerOutward(current: String, zone: String): String {
+        if (zone.isBlank()) return current
+        if (current.isBlank()) return zone
+        if (zone.startsWith(current) && zone.length > current.length) return zone
+        return current
+    }
+    pickupPostcode = preferLongerOutward(pickupPostcode, zonePostcodes.first)
+    dropoffPostcode = preferLongerOutward(dropoffPostcode, zonePostcodes.second)
     if (pickupPostcode.isBlank() && zonePostcodes.first.isNotBlank()) {
         pickupPostcode = zonePostcodes.first
     }

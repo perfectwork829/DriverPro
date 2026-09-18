@@ -334,7 +334,7 @@ class Aug25RetestBatchTest {
     }
 
     @Test
-    fun fare_13_02_trip_8_2_not_3_2() {
+    fun fare_13_02_trip_3_2_not_8_2() {
         val text = """
             2 UberX
             £13.02 9
@@ -351,7 +351,7 @@ class Aug25RetestBatchTest {
         assertEquals(13.02, ride.price, 0.05)
         assertEquals("W14", ride.pickup_address_postcode)
         assertEquals("W14", ride.dropoff_address_postcode)
-        assertEquals(8.2, ride.trip_distance_value!!, 0.15)
+        assertEquals(3.2, ride.trip_distance_value!!, 0.15)
     }
 
     @Test
