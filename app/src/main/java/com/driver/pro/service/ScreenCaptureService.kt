@@ -223,6 +223,18 @@ fun extractTime(text: String): List<String> {
         val total = hours * 60 + mins
         if (total in 1..600) hits.add(TimeHit(match.range.first, total))
     }
+    // "1 hr (10.5 mi)" / "lhr (10.5 mi)" — hours with no extra minutes.
+    val hourOnlyWithMiles = Regex(
+        """([0-9ilILoO]{1,2})\s*h(?:ou)?r?s?\s*\(""",
+        RegexOption.IGNORE_CASE,
+    )
+    hourOnlyWithMiles.findAll(text).forEach { match ->
+        val lookAhead = text.substring(match.range.last, (match.range.last + 12).coerceAtMost(text.length))
+        if (!lookAhead.contains("mi", ignoreCase = true)) return@forEach
+        val hours = match.groupValues[1].fixOcrDigits().toIntOrNull() ?: return@forEach
+        val total = hours * 60
+        if (total in 1..600) hits.add(TimeHit(match.range.first, total))
+    }
 
     // Prefer "N min (" — same pattern as on-screen; avoids rating/distances.
     // "[nr]?" tolerates "50 nmins (" OCR garble.
@@ -522,6 +534,12 @@ fun fillMissingTripMetrics(ocr: String, ride: RideRequest): RideRequest {
     val zonePostcodes = resolvePostcodesFromLegZones(ocr)
     if (pickupPc.isBlank() && zonePostcodes.first.isNotBlank()) pickupPc = zonePostcodes.first
     if (dropPc.isBlank() && zonePostcodes.second.isNotBlank()) dropPc = zonePostcodes.second
+    if (ocrLastDropAddressOmitsPostcode(ocr)) {
+        if (pickupPc.isBlank() && dropPc.isNotBlank()) {
+            pickupPc = dropPc
+        }
+        dropPc = ""
+    }
 
     return reconciled.copy(
         price = price,
@@ -948,7 +966,7 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
     }
 
     // Full UK postcodes in addresses: "KT3 5PN", "N19 4DJ" — inward/district digits may OCR as O/o/I/l/Z.
-    val inwardDigit = """[0-9oO]"""
+    val inwardDigit = """[0-9oOiIlL]"""
     val districtPart = """[0-9iIlLoOzZ][0-9A-Za-ziIlLoOzZ]?"""
     val fullPostcodeRegex = Regex(
         """\b([A-Za-z]{1,2})($districtPart)\s+($inwardDigit)([A-Za-z]{2})\b""",
@@ -966,10 +984,17 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
         RegexOption.IGNORE_CASE,
     )
 
+    fun isRealJammedTruncated(match: MatchResult): Boolean {
+        // "Hill" is H+il+l using OCR digit-letters — not SW156 / W148.
+        val prefix = match.groupValues[1].uppercase()
+        val numeric = match.groupValues[2] + match.groupValues[3]
+        return numeric.any { it.isDigit() } && prefix in UK_POSTCODE_AREAS
+    }
+
     fun lineAlreadyHasStructuredPostcode(line: String): Boolean {
         return fullPostcodeRegex.containsMatchIn(line) ||
             truncatedInwardRegex.containsMatchIn(line) ||
-            truncatedJammedRegex.containsMatchIn(line)
+            truncatedJammedRegex.findAll(line).any { isRealJammedTruncated(it) }
     }
 
     fun isInsideStationParentheses(line: String, matchStart: Int): Boolean {
@@ -988,6 +1013,8 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
         }
         if (lineLooksLikeMotorwayMapLabel(sourceLine)) return
         if (lineLooksLikeBareEastMapPostcode(sourceLine)) return
+        // "NI" map label + next-line "lin" must not become N1 via a cross-line full-postcode match.
+        if (lineLooksLikeBareMapDistrictLabel(sourceLine)) return
         val codes = mutableListOf<String>()
         outwardFromDistrictParts(prefix, districtRaw, sourceLine)?.let { codes.add(it) }
         // Only for outward-only OCR tokens: "W7" may be missing S. Full "W8 4SG" must stay W8.
@@ -1020,6 +1047,7 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
     }
 
     fullPostcodeRegex.findAll(text).forEach { match ->
+        if ('\n' in match.value) return@forEach
         val lineStart = text.lastIndexOf('\n', (match.range.first - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
         val lineEnd = text.indexOf('\n', match.range.first).let { if (it < 0) text.length else it }
         val sourceLine = text.substring(lineStart, lineEnd)
@@ -1027,12 +1055,14 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
     }
 
     truncatedInwardRegex.findAll(text).forEach { match ->
+        if ('\n' in match.value) return@forEach
         val lineStart = text.lastIndexOf('\n', (match.range.first - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
         val lineEnd = text.indexOf('\n', match.range.first).let { if (it < 0) text.length else it }
         val sourceLine = text.substring(lineStart, lineEnd)
         addOutward(match.range.first, match.groupValues[1].uppercase(), match.groupValues[2], inferSwFromW = false, sourceLine)
     }
     truncatedJammedRegex.findAll(text).forEach { match ->
+        if (!isRealJammedTruncated(match)) return@forEach
         val lineStart = text.lastIndexOf('\n', (match.range.first - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
         val lineEnd = text.indexOf('\n', match.range.first).let { if (it < 0) text.length else it }
         val sourceLine = text.substring(lineStart, lineEnd)
@@ -1618,6 +1648,14 @@ fun parseRideInfo(ocrTextRaw: String, visionText: Text? = null): RideRequest {
         ocrText.contains("Enfield", ignoreCase = true)
     ) {
         dropoffPostcode = "EN3"
+    }
+    // Last drop address has no postcode on the card (e.g. "Oxford St, London") — never keep
+    // a borrowed pickup outward. If pickup is still blank, the only PC was the delayed pickup.
+    if (ocrLastDropAddressOmitsPostcode(ocrText)) {
+        if (pickupPostcode.isBlank() && dropoffPostcode.isNotBlank()) {
+            pickupPostcode = dropoffPostcode
+        }
+        dropoffPostcode = ""
     }
 
     if (structured != null) {

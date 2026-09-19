@@ -62,6 +62,11 @@ internal fun normalizeOcrOfferText(text: String): String {
         Regex("""\b(HA9)\s+G([A-Za-z]{2})\b""", RegexOption.IGNORE_CASE),
         "$1 0$2",
     )
+    // HAO lHX → HA0 1HX (0 and 1 as letters on Wembley cards).
+    out = out.replace(
+        Regex("""\b(HA|CR)[Oo]\s+[IilL]([A-Za-z]{2})\b""", RegexOption.IGNORE_CASE),
+    ) { "${it.groupValues[1]}0 1${it.groupValues[2]}" }
+    out = out.replace(Regex("""\bHA[Oo]\b"""), "HA0")
     // Truncated inward jammed onto the outward: SW156 → SW15 6, W148 → W14 8, MK107 → MK10 7.
     // Uber often clips the last two inward letters on the card (SW15 6 / SW1H 0).
     // Only split when the 2-digit outward is a real UK district so A316 / M25 stay untouched.
@@ -74,10 +79,10 @@ internal fun normalizeOcrOfferText(text: String): String {
             m.value
         }
     }
-    // SW6 INQ / W11 IPY — leading inward 1 misread as I/l.
+    // SW6 INQ / W11 IPY / HAO lHX — leading inward 1 misread as I/l.
     out = out.replace(
         Regex(
-            """\b([A-Za-z]{1,2}\d{1,2}[A-Za-z]?)\s+[IilL]([A-Za-z]{2})\b""",
+            """\b([A-Za-z]{1,2}[0-9oO]{1,2}[A-Za-z]?)\s+[IilL]([A-Za-z]{2})\b""",
             RegexOption.IGNORE_CASE,
         ),
         "$1 1$2",
@@ -642,18 +647,39 @@ internal fun parseTripLegFromLine(line: String): TripLegParse? {
         .replace(Regex("""\b(\d+)\s*min\s+([oO])(\d)\s*m\)"""), "$1 min (0.$3 mi)")
         // "6min(1.6 mi)" without space
         .replace(Regex("""(\d)mins?\(""", RegexOption.IGNORE_CASE), "$1 min (")
+        // "lhr (10.5 mi)" / "1hr (10.5 mi)" — hour digit jammed onto hr, no minutes.
+        .replace(Regex("""\b([0-9ilIL])hr\b""", RegexOption.IGNORE_CASE), "$1 hr")
         // Last: "(0.4 m)" → "(0.4 mi)" so the paren-recovered legs above still parse
         .replace(Regex("""(\d)\s*m\)"""), "$1 mi)")
 
+    val hourOnlyMatch = Regex(
+        """([0-9ilILoO]{1,2})\s*h(?:ou)?rs?\s*\(\s*([0-9ilILoO]+(?:\.[0-9ilILoO]+)?)\s*mi""",
+        RegexOption.IGNORE_CASE,
+    ).find(normalized)
     val match = Regex(
         """(?:([0-9ilILoO]{1,2})\s*h(?:ou)?r?s?\s*)?([0-9ilILoO]{1,3})\s*mins?\s*\(\s*([0-9ilILoO]+(?:\.[0-9ilILoO]+)?)\s*mi""",
         RegexOption.IGNORE_CASE,
-    ).find(normalized) ?: return null
+    ).find(normalized)
 
-    val hours = match.groupValues[1].fixOcrDigits().toIntOrNull() ?: 0
-    val mins = match.groupValues[2].fixOcrDigits().toIntOrNull() ?: return null
-    val totalMinutes = if (hours > 0) hours * 60 + mins else mins
-    var miles = parseOcrMiles(match.groupValues[3], totalMinutes) ?: return null
+    val hours: Int
+    val mins: Int
+    val milesRaw: String
+    when {
+        match != null -> {
+            hours = match.groupValues[1].fixOcrDigits().toIntOrNull() ?: 0
+            mins = match.groupValues[2].fixOcrDigits().toIntOrNull() ?: return null
+            milesRaw = match.groupValues[3]
+        }
+        hourOnlyMatch != null -> {
+            hours = hourOnlyMatch.groupValues[1].fixOcrDigits().toIntOrNull() ?: return null
+            mins = 0
+            milesRaw = hourOnlyMatch.groupValues[2]
+        }
+        else -> return null
+    }
+    if (hours == 0 && mins == 0) return null
+    val totalMinutes = hours * 60 + mins
+    var miles = parseOcrMiles(milesRaw, totalMinutes) ?: return null
     // Prefer explicit 1.2/1,2 on the same leg line when OCR also invented 2.0.
     if (miles in 1.85..2.15 &&
         Regex("""1[.,]2""", RegexOption.IGNORE_CASE).containsMatchIn(originalLine)
@@ -1137,7 +1163,7 @@ internal fun lineHasFullInwardStrict(line: String, outward: String): Boolean {
         }
     }
     return Regex(
-        """\b${Regex.escape(letters)}(?:${Regex.escape(district)}|$districtPat)(?!\d)\s+[0-9oO][A-Za-z]{2}\b""",
+        """\b${Regex.escape(letters)}(?:${Regex.escape(district)}|$districtPat)(?!\d)\s+[0-9oOiIlL][A-Za-z]{2}\b""",
         RegexOption.IGNORE_CASE,
     ).containsMatchIn(line)
 }
@@ -1360,6 +1386,68 @@ fun ocrHasDropAddressWithoutPostcode(ocrText: String): Boolean {
     }
     if (legIndices.size < 2) return false
     return dropZoneHasAddressWithoutPostcode(lines, legIndices[1], lines.size)
+}
+
+/** True when the last drop-zone address line has no postcode (Uber omitted it). */
+fun ocrLastDropAddressOmitsPostcode(ocrText: String): Boolean {
+    val lines = ocrText.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+    val legIndices = lines.mapIndexedNotNull { index, line ->
+        if (parseTripLegFromLine(line) != null) index else null
+    }
+    if (legIndices.size < 2) return false
+    val dropLegIdx = legIndices[1]
+    val inwardOnly = Regex("""^\s*[0-9oOiIlL][A-Za-z]{2}\s*$""", RegexOption.IGNORE_CASE)
+    val streetWord = Regex(
+        """\b(St|Street|Road|Rd|Ave|Lane|Way|Drive|Dr|Wembley|Portland|Broadway|Kings|Magistrates|Hospital|Court|Hotel|Drury|Circular|Kitchen|Pub|Wharf|World|Hill|Ascot|Megastore|Station|Clinic|House|Mall|Gardens)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    fun isButton(line: String): Boolean =
+        line.equals("Match", ignoreCase = true) ||
+            line.equals("Confirm", ignoreCase = true)
+
+    fun looksLikeMapChrome(line: String): Boolean {
+        if (line.any { it.isDigit() } || line.contains(',')) return false
+        val words = line.split(Regex("""\s+""")).filter { it.isNotEmpty() }
+        if (words.size !in 1..4) return false
+        return words.all { w ->
+            w.length >= 3 && w.all { it.isLetter() } && w == w.uppercase()
+        }
+    }
+
+    fun isJunk(line: String): Boolean =
+        isButton(line) ||
+            lineLooksLikeBareMapDistrictLabel(line) ||
+            looksLikeMapChrome(line) ||
+            line.equals("London", ignoreCase = true) ||
+            line.equals("London.", ignoreCase = true)
+
+    fun looksLikeStreet(line: String): Boolean {
+        if (isJunk(line)) return false
+        if (isPostcodeOnlyLine(line) || inwardOnly.matches(line)) return false
+        return line.contains(',') || streetWord.containsMatchIn(line) ||
+            (line.contains("London", ignoreCase = true) && line.length > 10)
+    }
+
+    var lastStreetIdx = -1
+    for (i in (dropLegIdx + 1) until lines.size) {
+        if (isButton(lines[i])) break
+        if (looksLikeStreet(lines[i])) lastStreetIdx = i
+    }
+    if (lastStreetIdx < 0) return false
+    val lastStreet = lines[lastStreetIdx]
+    if (extractOuterLondonPostcodes(lastStreet).isNotEmpty()) return false
+    val laterOrphanPc = ((lastStreetIdx + 1) until lines.size).any { idx ->
+        val line = lines[idx]
+        if (isJunk(line)) return@any false
+        isPostcodeOnlyLine(line) || inwardOnly.matches(line) ||
+            extractOuterLondonPostcodes(line).isNotEmpty()
+    }
+    if (laterOrphanPc) return false
+    val prev = ((dropLegIdx + 1) until lastStreetIdx).lastOrNull { idx ->
+        val line = lines[idx]
+        !isJunk(line) && (isPostcodeOnlyLine(line) || inwardOnly.matches(line))
+    }
+    return prev == null
 }
 
 internal fun dropZoneHasAddressWithoutPostcode(
