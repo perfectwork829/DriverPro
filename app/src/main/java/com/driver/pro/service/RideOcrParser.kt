@@ -67,6 +67,12 @@ internal fun normalizeOcrOfferText(text: String): String {
         Regex("""\b(HA|CR)[Oo]\s+[IilL]([A-Za-z]{2})\b""", RegexOption.IGNORE_CASE),
     ) { "${it.groupValues[1]}0 1${it.groupValues[2]}" }
     out = out.replace(Regex("""\bHA[Oo]\b"""), "HA0")
+    // HAl 30J → HA1 3UJ (1 and U as I/l and 0 on Harrow cards).
+    out = out.replace(Regex("""\bHA[Il]\b"""), "HA1")
+    out = out.replace(
+        Regex("""\b(HA1)\s+(\d)0([A-Za-z])\b""", RegexOption.IGNORE_CASE),
+        "$1 $2U$3",
+    )
     // Truncated inward jammed onto the outward: SW156 → SW15 6, W148 → W14 8, MK107 → MK10 7.
     // Uber often clips the last two inward letters on the card (SW15 6 / SW1H 0).
     // Only split when the 2-digit outward is a real UK district so A316 / M25 stay untouched.
@@ -567,6 +573,17 @@ internal fun parseOcrMiles(raw: String, legMinutes: Int? = null): Double? {
         }
     }
 
+    // "11.8 mi" OCR'd as "11.3 mi" (8→3) on longer urban/A-road legs (~25–35 min).
+    if (legMinutes != null && legMinutes in 24..40 && value in 10.5..12.49) {
+        val tenths = kotlin.math.round((value * 10.0) % 10.0).toInt()
+        if (tenths == 3) {
+            val asEightTenths = value + 0.5
+            if (isPlausibleMilesForMinutes(asEightTenths, legMinutes)) {
+                value = asEightTenths
+            }
+        }
+    }
+
     // Long trips: "27.8 mi" / "11.8 mi" often OCRs as "2.78" / "1.1" (tens digit / decimal lost).
     if (legMinutes != null && legMinutes >= 20 && value in 1.0..2.99) {
         val mphLo = value / (legMinutes / 60.0)
@@ -576,9 +593,9 @@ internal fun parseOcrMiles(raw: String, legMinutes: Int? = null): Double? {
         }
     }
 
-    // Trip "3.8 mi" often OCRs as "8.8 mi" (3 misread as 8). Only downscale when 8.x
-    // is implausibly fast — real 44–47 min / 8.1–8.7 mi cards must stay 8.x.
-    if (legMinutes != null && legMinutes in 20..50 && value in 8.0..8.89) {
+    // Trip "3.8 mi" often OCRs as "8.8 mi" (3 misread as 8). Only 8.8/8.9 — real
+    // 20 min / 8.4 mi Heathrow cards must stay 8.4. Longer 8.1–8.7 cards stay 8.x.
+    if (legMinutes != null && legMinutes in 20..50 && value in 8.75..8.94) {
         val mph = value / (legMinutes / 60.0)
         val alt = value - 5.0
         if (mph > 20.0 && alt in 3.0..4.5 && isPlausibleMilesForMinutes(alt, legMinutes)) {
@@ -620,6 +637,8 @@ internal fun parseTripLegFromLine(line: String): TripLegParse? {
         .replace(Regex("""(\d)\s*nmi\b""", RegexOption.IGNORE_CASE), "$1 mi")
         // "1.l mi" — decimal digit OCR'd as letter l/I/O
         .replace(Regex("""(\d)\.([ilIoO])\s*mi""", RegexOption.IGNORE_CASE), "$1.1 mi")
+        // "3.1l mi" — extra letter after a real tenth, not a second decimal digit (3.11).
+        .replace(Regex("""(\d+\.\d)[ilIL]\s*mi"""), "$1 mi")
         // Garbled "(l.0 mi)" / "(lỘ mi)" / "(1Ộ mi)" → "(1.0 mi)"
         .replace(Regex("""\([lI1]Ộ\s*mi""", RegexOption.IGNORE_CASE), "(1.0 mi")
         .replace(Regex("""\([lI1]\s*[.Oo0Ộ]\s*[0oO]\s*mi""", RegexOption.IGNORE_CASE), "(1.0 mi")
@@ -709,8 +728,8 @@ internal fun parseTripLegFromLine(line: String): TripLegParse? {
         val scaled = miles / 10.0
         if (isPlausibleMilesForMinutes(scaled, totalMinutes)) miles = scaled
     }
-    // Trip "3.8 mi" often OCRs as "8.8 mi" — only when 8.x is implausibly fast.
-    if (totalMinutes in 20..50 && miles in 8.0..8.89) {
+    // Trip "3.8 mi" often OCRs as "8.8 mi" — only 8.8/8.9, not real 8.4 / 20 min.
+    if (totalMinutes in 20..50 && miles in 8.75..8.94) {
         val mph = miles / (totalMinutes / 60.0)
         val alt = miles - 5.0
         if (mph > 20.0 && alt in 3.0..4.5 && isPlausibleMilesForMinutes(alt, totalMinutes)) {

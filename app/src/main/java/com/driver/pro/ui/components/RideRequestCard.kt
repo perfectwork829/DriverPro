@@ -40,6 +40,12 @@ fun showResult(acceptedOrRejected: Int): String {
     }
 }
 
+/** One decimal so 8.4 stays 8.4 and 3.4000000000000004 is not shown. */
+private fun formatHistoryMiles(miles: Double?): String {
+    if (miles == null) return ""
+    return String.format(java.util.Locale.US, "%.1f", miles)
+}
+
 private fun copyToClipboard(context: Context, label: String, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
     clipboard?.setPrimaryClip(ClipData.newPlainText(label, text))
@@ -74,14 +80,14 @@ fun RideRequestCard(rideRequest: RideRequest) {
             Text("ID-${rideRequest.id} : ${rideRequest.created_at}", fontSize = 16.sp, style = MaterialTheme.typography.bodyMedium)
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                "Price/Rate: ${rideRequest.price}(${String.format(java.util.Locale.US, "%.2f", rideRequest.rating)})",
+                "Price/Rate: ${String.format(java.util.Locale.US, "%.2f", rideRequest.price)}(${String.format(java.util.Locale.US, "%.2f", rideRequest.rating)})",
                 fontSize = 18.sp,
                 style = MaterialTheme.typography.bodyLarge,
             )
             Spacer(modifier = Modifier.height(4.dp))
-            Text("Pickup: ${rideRequest.pickup_time_minutes}(${rideRequest.pickup_distance_value})(${rideRequest.pickup_address_postcode})", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
+            Text("Pickup: ${rideRequest.pickup_time_minutes}(${formatHistoryMiles(rideRequest.pickup_distance_value)})(${rideRequest.pickup_address_postcode})", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
             Spacer(modifier = Modifier.height(4.dp))
-            Text("Drop: ${rideRequest.trip_time_minutes}(${rideRequest.trip_distance_value})(${rideRequest.dropoff_address_postcode})", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
+            Text("Drop: ${rideRequest.trip_time_minutes}(${formatHistoryMiles(rideRequest.trip_distance_value)})(${rideRequest.dropoff_address_postcode})", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
             Spacer(modifier = Modifier.height(4.dp))
             Text("Score: ${rideRequest.final_score ?: "N/A"} - ${showResult(rideRequest.acceptedOrRejected)}", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
             formatOfferEarningsLine(rideRequest)?.let { earnings ->

@@ -1083,7 +1083,7 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
             if (districtRaw.isEmpty() || districtRaw.any { it !in "iIlLoOzZ" } || districtRaw.length > 2) {
                 return@forEach
             }
-            val londonAreas = setOf("E", "EC", "N", "NW", "SE", "SW", "W", "WC", "CR", "BR")
+            val londonAreas = setOf("E", "EC", "N", "NW", "SE", "SW", "W", "WC", "CR", "BR", "HA")
             val wiStyle = prefix.length == 2 && prefix[0] in setOf('E', 'N', 'S', 'W') &&
                 prefix[1] in setOf('I', 'L')
             if (prefix !in londonAreas && !wiStyle) return@forEach
