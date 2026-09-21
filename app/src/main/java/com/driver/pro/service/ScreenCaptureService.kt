@@ -1173,6 +1173,7 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
     val partialW1OnLondon = mapOf(
         "WF" to "W1F", "WD" to "W1D", "WIH" to "W1H", "WIF" to "W1F",
         "WIW" to "W1W", "WIU" to "W1U", "W1U" to "W1U",
+        "WJ" to "W1J", "WIJ" to "W1J",
     )
     partialW1OnLondon.forEach { (token, outward) ->
         Regex("""\b${Regex.escape(token)}\b""", RegexOption.IGNORE_CASE).findAll(text).forEach { m ->
@@ -1194,6 +1195,7 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
         val partialOutward = mapOf(
             "WF" to "W1F", "WD" to "W1D", "WIH" to "W1H", "WIF" to "W1F",
             "WIW" to "W1W", "WIU" to "W1U", "W1U" to "W1U",
+            "WJ" to "W1J", "WIJ" to "W1J",
         )
         lines.forEachIndexed { i, line ->
             val inward = Regex("""\b([0-9oO][A-Za-z]{2})\b""").find(line)?.groupValues?.get(1)
@@ -1514,6 +1516,14 @@ fun parseRideInfo(ocrTextRaw: String, visionText: Text? = null): RideRequest {
         pickupPostcode = zonePostcodes.first
     }
     if (dropoffPostcode.isBlank() && zonePostcodes.second.isNotBlank()) {
+        dropoffPostcode = zonePostcodes.second
+    }
+    if (zonePostcodes.first.isNotBlank() && zonePostcodes.second.isNotBlank() &&
+        zonePostcodes.first != zonePostcodes.second &&
+        pickupPostcode == zonePostcodes.second &&
+        dropoffPostcode == zonePostcodes.first
+    ) {
+        pickupPostcode = zonePostcodes.first
         dropoffPostcode = zonePostcodes.second
     }
     if (pickupPostcode.isNotBlank() && pickupPostcode == dropoffPostcode &&

@@ -73,6 +73,11 @@ internal fun normalizeOcrOfferText(text: String): String {
         Regex("""\b(HA1)\s+(\d)0([A-Za-z])\b""", RegexOption.IGNORE_CASE),
         "$1 $2U$3",
     )
+    // SWIH0 / SWIH 0 → SW1H 0 (1 as I, truncated inward jammed).
+    // Do not eat NWIO 1PP (O is the 0 of NW10).
+    out = out.replace(
+        Regex("""\b(SW|EC|WC|NW|SE)[IilL]([ABEHNPRVWXYabehnprvwxy])\s*([0-9oO])\b"""),
+    ) { "${it.groupValues[1]}1${it.groupValues[2]} ${it.groupValues[3]}" }
     // Truncated inward jammed onto the outward: SW156 → SW15 6, W148 → W14 8, MK107 → MK10 7.
     // Uber often clips the last two inward letters on the card (SW15 6 / SW1H 0).
     // Only split when the 2-digit outward is a real UK district so A316 / M25 stay untouched.
@@ -1462,11 +1467,25 @@ fun ocrLastDropAddressOmitsPostcode(ocrText: String): Boolean {
             extractOuterLondonPostcodes(line).isNotEmpty()
     }
     if (laterOrphanPc) return false
+    val earlierOrphanPc = (0 until legIndices[0]).any { idx ->
+        val line = lines[idx]
+        if (isJunk(line)) return@any false
+        isFullPostcodeOnlyLine(line) || isPostcodeOnlyLine(line)
+    }
+    if (earlierOrphanPc) return false
     val prev = ((dropLegIdx + 1) until lastStreetIdx).lastOrNull { idx ->
         val line = lines[idx]
         !isJunk(line) && (isPostcodeOnlyLine(line) || inwardOnly.matches(line))
     }
-    return prev == null
+    if (prev != null) {
+        val ownerHasOutward = ((dropLegIdx + 1) until prev).any { idx ->
+            val line = lines[idx]
+            !isJunk(line) && extractOuterLondonPostcodes(line).isNotEmpty()
+        }
+        // "NW9" + "5AN" is the pickup wrap; "Kings Dr. Wembley" still has no drop PC.
+        return ownerHasOutward
+    }
+    return true
 }
 
 internal fun dropZoneHasAddressWithoutPostcode(
@@ -1726,7 +1745,67 @@ fun resolvePostcodesFromLegZones(ocrText: String): Pair<String, String> {
         if (p.isNotBlank()) pickup = p
         if (d.isNotBlank()) drop = d
     }
+    recoverPickupLocationLabel(lines, pickupLegIdx)?.let { (p, d) ->
+        if (p.isNotBlank()) pickup = p
+        if (d.isNotBlank()) drop = d
+    }
+    if (drop.isBlank()) {
+        recoverOrphanPostcodeBeforePickup(lines, pickupLegIdx, pickup)?.let { drop = it }
+    }
     return pickup to drop
+}
+
+/** "SSE Wembley Arena Pickup Location" + next-line HA9 is pickup even if OCR listed drop first. */
+internal fun recoverPickupLocationLabel(
+    lines: List<String>,
+    pickupLegIdx: Int,
+): Pair<String, String>? {
+    val locIdx = lines.indices.firstOrNull { i ->
+        i > pickupLegIdx &&
+            (
+                lines[i].contains("pickup location", ignoreCase = true) ||
+                    lines[i].contains("pick-up location", ignoreCase = true) ||
+                    lines[i].contains("pick-up point", ignoreCase = true)
+                )
+    } ?: return null
+    var pickupPc = extractOuterLondonPostcodes(lines[locIdx]).firstOrNull { isValidUkOutward(it) }
+    if (pickupPc.isNullOrBlank()) {
+        for (j in locIdx + 1 until minOf(locIdx + 3, lines.size)) {
+            if (lines[j].equals("Match", ignoreCase = true) ||
+                lines[j].equals("Confirm", ignoreCase = true)
+            ) {
+                break
+            }
+            pickupPc = extractOuterLondonPostcodes(lines[j]).firstOrNull { isValidUkOutward(it) }
+            if (!pickupPc.isNullOrBlank()) break
+        }
+    }
+    if (pickupPc.isNullOrBlank()) return null
+    val others = mutableListOf<String>()
+    for (i in pickupLegIdx + 1 until lines.size) {
+        if (i == locIdx) continue
+        for (pc in extractOuterLondonPostcodes(lines[i])) {
+            if (isValidUkOutward(pc) && pc != pickupPc && pc !in others) others.add(pc)
+        }
+    }
+    val dropPc = others.lastOrNull().orEmpty()
+    if (dropPc.isBlank() || dropPc == pickupPc) return pickupPc to ""
+    return pickupPc to dropPc
+}
+
+/** Full postcode dumped above the first time (e.g. "NWI 2RT" then Euston with no PC). */
+internal fun recoverOrphanPostcodeBeforePickup(
+    lines: List<String>,
+    pickupLegIdx: Int,
+    pickupPc: String,
+): String? {
+    for (i in 0 until pickupLegIdx) {
+        val line = lines[i]
+        if (!isFullPostcodeOnlyLine(line) && !isPostcodeOnlyLine(line)) continue
+        val pc = extractOuterLondonPostcodes(line).firstOrNull { isValidUkOutward(it) } ?: continue
+        if (pc.isNotBlank() && pc != pickupPc) return pc
+    }
+    return null
 }
 
 /**
