@@ -8,8 +8,9 @@ import com.driver.pro.RideRequest
 import com.driver.pro.getToken
 import com.driver.pro.saveToken
 import io.ktor.client.*
-import io.ktor.client.engine.cio.*
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.request.*
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
@@ -29,20 +30,60 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 
+import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.util.concurrent.TimeUnit
+import javax.net.ssl.SSLException
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
 
-// Create a client with the necessary configuration for content negotiation
-val client = HttpClient(CIO) {
+/**
+ * Prefer IPv4 so carrier IPv6/CGNAT middleboxes (common on T-Mobile) are not
+ * tried first. IPv6 addresses are still used if no A records exist, or after v4.
+ */
+internal fun orderAddressesIpv4First(all: List<InetAddress>): List<InetAddress> {
+    if (all.size <= 1) return all
+    val v4 = all.filterIsInstance<Inet4Address>()
+    if (v4.isEmpty()) return all
+    return v4 + all.filter { it !is Inet4Address }
+}
+
+internal object PreferIpv4Dns : Dns {
+    override fun lookup(hostname: String): List<InetAddress> {
+        return orderAddressesIpv4First(Dns.SYSTEM.lookup(hostname))
+    }
+}
+
+/**
+ * Android/OkHttp TLS (SNI + system trust store). Ktor CIO's custom TLS stack
+ * often handshakes a carrier default cert (e.g. *.t-mobile.pl) instead of
+ * idrivesmart.co.uk — hostname verification then fails and History is empty.
+ * Hostname verification stays on.
+ */
+val client = HttpClient(OkHttp) {
     install(ContentNegotiation) {
         json(Json { ignoreUnknownKeys = true }) // Ignore unknown keys during deserialization
     }
+    install(HttpTimeout) {
+        requestTimeoutMillis = 30_000
+        connectTimeoutMillis = 20_000
+        socketTimeoutMillis = 30_000
+    }
     /** Read 4xx/5xx bodies instead of throwing before `bodyAsText()`. */
     expectSuccess = false
+    engine {
+        config {
+            dns(PreferIpv4Dns)
+            connectTimeout(20, TimeUnit.SECONDS)
+            readTimeout(30, TimeUnit.SECONDS)
+            writeTimeout(30, TimeUnit.SECONDS)
+        }
+    }
 }
 
 /** Lenient decoding for API `user` objects (extra fields, minor type quirks). */
@@ -94,6 +135,40 @@ internal fun parseApiErrorBody(body: String, httpStatus: Int? = null): String {
         t.take(280)
     }
 }
+
+/** User-facing network errors — keep TLS on; do not dump carrier certificate SANs. */
+internal fun friendlyNetworkMessage(e: Throwable): String {
+    val cause = e.cause
+    val combined = listOfNotNull(e.message, e.javaClass.simpleName, cause?.message)
+        .joinToString(" ")
+        .lowercase()
+    val ssl = e is SSLException ||
+        cause is SSLException ||
+        combined.contains("server certificate") ||
+        combined.contains("no server host") ||
+        combined.contains("sslhandshake") ||
+        combined.contains("certpath") ||
+        (combined.contains("hostname") && combined.contains("not verified")) ||
+        (combined.contains("certificate") &&
+            (combined.contains("provided in certificate") ||
+                combined.contains("mismatch") ||
+                combined.contains("trust")))
+    if (ssl) {
+        return "Cannot reach idrivesmart.co.uk on this connection (HTTPS blocked or intercepted). Try Wi‑Fi, then retry."
+    }
+    if (combined.contains("unable to resolve host") ||
+        combined.contains("unknownhost") ||
+        combined.contains("failed to connect") ||
+        combined.contains("connection reset") ||
+        combined.contains("timed out") ||
+        combined.contains("timeout")
+    ) {
+        return "Cannot reach idrivesmart.co.uk. Check internet and retry."
+    }
+    return "API call failed: ${e.message ?: e.javaClass.simpleName}"
+}
+
+internal fun wrapApiFailure(e: Exception): Exception = Exception(friendlyNetworkMessage(e), e)
 
 @SuppressLint("UnsafeOptInUsageError")
 @Serializable
@@ -357,7 +432,7 @@ suspend fun getUser(jwtToken: String?): Result<User> {
         Result.failure(Exception("Unexpected response (no user object)"))
     } catch (e: Exception) {
         Log.e("API Error", "API call failed: ${e.message}")
-        Result.failure(Exception("API call failed: ${e.message}"))
+        Result.failure(wrapApiFailure(e))
     }
 }
 
@@ -405,7 +480,7 @@ private suspend fun calculateRideRequestOnce(jsonPayload: String, jwtToken: Stri
         executeRideRequest(jwtToken, fallbackBody, "fallback")
     } catch (e: Exception) {
         Log.e("API Error", "API call failed: ${e.message}", e)
-        Result.failure(Exception("API call failed: ${e.message ?: e.javaClass.simpleName}"))
+        Result.failure(wrapApiFailure(e))
     }
 }
 
@@ -559,7 +634,7 @@ private suspend fun loadRecentRideRequestOnce(jwtToken: String?): Result<List<Ri
         }
     } catch (e: Exception) {
         Log.e("API Error", "API call failed: ${e.message}")
-        Result.failure(Exception("API call failed: ${e.message}"))
+        Result.failure(wrapApiFailure(e))
     }
 }
 
@@ -620,7 +695,7 @@ suspend fun updateSetting(jsonPayload: String, jwtToken: String?, refreshToken: 
     } catch (e: Exception) {
         // Handle any other exceptions (network issues, etc.)
         Log.e("API Error", "API call failed: ${e.message}")
-        Result.failure(Exception("API call failed: ${e.message}"))
+        Result.failure(wrapApiFailure(e))
     }
 
 
@@ -681,7 +756,7 @@ suspend fun getSetting(jwtToken: String?, refreshToken: String?): Result<Setting
     } catch (e: Exception) {
         // Handle any other exceptions (network issues, etc.)
         Log.e("API Error", "API call failed: ${e.message}")
-        Result.failure(Exception("API call failed: ${e.message}"))
+        Result.failure(wrapApiFailure(e))
     }
 
 

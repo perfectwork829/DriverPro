@@ -238,11 +238,16 @@ fun HistoryScreen() {
                 }
             }
             loadError.value != null && filteredRideRequest.isEmpty() -> {
-                Text(
-                    text = loadError.value.orEmpty(),
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = loadError.value.orEmpty(),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    OutlinedButton(onClick = { loadHistory() }) {
+                        Text("Retry")
+                    }
+                }
             }
             filteredRideRequest.isEmpty() -> {
                 val cleared = getHistoryClearedAtMs(context) > 0L

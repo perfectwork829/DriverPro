@@ -18,8 +18,8 @@ android {
         applicationId = "com.driver.pro"
         minSdk = 26
         targetSdk = 36
-        versionCode = 28
-        versionName = "1.28"
+        versionCode = 29
+        versionName = "1.29"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -96,7 +96,7 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:34.7.0"))
 
     implementation("io.ktor:ktor-client-core:2.3.5")
-    implementation("io.ktor:ktor-client-cio:2.3.5")
+    implementation("io.ktor:ktor-client-okhttp:2.3.5")
     implementation("io.ktor:ktor-client-content-negotiation:2.3.5")
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.5")
     implementation("org.json:json:20240303")
