@@ -73,10 +73,12 @@ internal fun normalizeOcrOfferText(text: String): String {
         Regex("""\b(HA1)\s+(\d)0([A-Za-z])\b""", RegexOption.IGNORE_CASE),
         "$1 $2U$3",
     )
-    // SWIH0 / SWIH 0 → SW1H 0 (1 as I, truncated inward jammed).
-    // Do not eat NWIO 1PP (O is the 0 of NW10).
+    // SWIH0 / SWIH 0 / SWIW OEN → SW1H 0 / SW1W OEN (1 as I; truncated or full inward).
+    // Do not eat NWIO 1PP (O is the 0 of NW10 — O is not a central sector letter).
     out = out.replace(
-        Regex("""\b(SW|EC|WC|NW|SE)[IilL]([ABEHNPRVWXYabehnprvwxy])\s*([0-9oO])\b"""),
+        Regex(
+            """\b(SW|EC|WC|NW|SE)[IilL]([ABEHNPRVWXYabehnprvwxy])\s*([0-9oO](?:[A-Za-z]{2})?)\b""",
+        ),
     ) { "${it.groupValues[1]}1${it.groupValues[2]} ${it.groupValues[3]}" }
     // Truncated inward jammed onto the outward: SW156 → SW15 6, W148 → W14 8, MK107 → MK10 7.
     // Uber often clips the last two inward letters on the card (SW15 6 / SW1H 0).
@@ -1431,6 +1433,8 @@ fun ocrLastDropAddressOmitsPostcode(ocrText: String): Boolean {
 
     fun looksLikeMapChrome(line: String): Boolean {
         if (line.any { it.isDigit() } || line.contains(',')) return false
+        // "SWIW OEN" is OCR of SW1W 0EN (I/O as 1/0) — not HYDE PARK map labels.
+        if (extractOuterLondonPostcodes(line).isNotEmpty()) return false
         val words = line.split(Regex("""\s+""")).filter { it.isNotEmpty() }
         if (words.size !in 1..4) return false
         return words.all { w ->
