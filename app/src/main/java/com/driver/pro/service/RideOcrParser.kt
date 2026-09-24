@@ -50,19 +50,28 @@ internal fun normalizeOcrOfferText(text: String): String {
     )
     // Wll / Wil / WIl / Wii → W11 (digit 1 misread as I/l on Notting Hill cards).
     out = out.replace(Regex("""\bW[IilL]{2}\b"""), "W11")
+    // Wll1HE / Wil1HE → W11 1HE (inward jammed onto W11 when both 1s are I/l).
+    out = out.replace(
+        Regex("""\bW[IilL]{2}(\d[A-Za-z]{2})\b"""),
+        "W11 $1",
+    )
     // WI2 / Wl2 / WI4 → W12 / W14 (I/l as the tens digit).
     out = out.replace(Regex("""\bW[IilL]([1-4])\b"""), "W1$1")
     // W1l / W1I → W11.
     out = out.replace(Regex("""\bW1[IilL]\b"""), "W11")
+    // WwC2B / WWC2B → WC2B (extra W glued onto WC/EC outwards).
+    out = out.replace(
+        Regex("""\bW+(WC|EC)(\d[A-Za-z]?)\b""", RegexOption.IGNORE_CASE),
+    ) { "${it.groupValues[1].uppercase()}${it.groupValues[2]}" }
     // W23 → W2 3 (Uber clipped inward letters). W14 is W+14 so the first digit is 1, not 2–8.
     out = out.replace(Regex("""\bW([2-8])(\d)\b"""), "W$1 $2")
     // NW0 3DU → NW10 3DU (tens digit 1 dropped).
     out = out.replace(Regex("""\bNW0\b""", RegexOption.IGNORE_CASE), "NW10")
     // Inward 3QG OCR'd as 30G (Q→0) on W11 Ruby-Zoe cards.
     out = out.replace(Regex("""\b30G\b""", RegexOption.IGNORE_CASE), "3QG")
-    // W111 → W11 1 (inward digit jammed onto W11 / E14 / N12). Do not split N12 / W12.
+    // W111 → W11 1 and W111HE → W11 1HE (inward jammed onto W11 / E14 / N12).
     out = out.replace(
-        Regex("""\b(W|E|N)(1[1-4])(\d)\b"""),
+        Regex("""\b(W|E|N)(1[1-4])(\d(?:[A-Za-z]{2})?)\b"""),
         "$1$2 $3",
     )
     // NW21LS / HA9GDE / NW41SE jammed full postcode (missing space before inward).
@@ -116,6 +125,10 @@ internal fun normalizeOcrOfferText(text: String): String {
             """\b(SW|EC|WC|NW|SE)[IilL]([ABEHNPRVWXYabehnprvwxy])\s*([0-9oO](?:[A-Za-z]{2})?)\b""",
         ),
     ) { "${it.groupValues[1]}1${it.groupValues[2]} ${it.groupValues[3]}" }
+    // WIF 7HL / WIH 2HQ — digit 1 as I, even when the line has no "London".
+    out = out.replace(
+        Regex("""\bWI([FDUHJW])\s+([0-9oO][A-Za-z]{2})\b""", RegexOption.IGNORE_CASE),
+    ) { "W1${it.groupValues[1].uppercase()} ${it.groupValues[2]}" }
     // Truncated inward jammed onto the outward: SW156 → SW15 6, W148 → W14 8, MK107 → MK10 7.
     // Uber often clips the last two inward letters on the card (SW15 6 / SW1H 0).
     // Only split when the 2-digit outward is a real UK district so A316 / M25 stay untouched.
