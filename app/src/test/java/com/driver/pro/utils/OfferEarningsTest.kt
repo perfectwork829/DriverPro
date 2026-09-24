@@ -2,6 +2,7 @@ package com.driver.pro.utils
 
 import com.driver.pro.RideRequest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -32,14 +33,12 @@ class OfferEarningsTest {
 
     @Test
     fun pounds_per_hour_uses_pickup_plus_trip_time() {
-        // £15.79 over 7 + 47 = 54 min → 15.79 / 0.9 = 17.54
         val e = computeOfferEarnings(15.79, 7, 47, 1.9, 8.1)
         assertEquals(17.54, e.poundsPerHour!!, 0.02)
     }
 
     @Test
     fun pounds_per_mile_uses_pickup_plus_trip_miles() {
-        // £15.79 / (1.9 + 8.1) = 1.579
         val e = computeOfferEarnings(15.79, 7, 47, 1.9, 8.1)
         assertEquals(1.58, e.poundsPerMile!!, 0.02)
     }
@@ -62,29 +61,35 @@ class OfferEarningsTest {
     }
 
     @Test
-    fun overlay_message_is_two_lines() {
-        val msg = formatScoreOverlayMessage(42, ride(15.79, 7, 47, 1.9, 8.1))
-        assertTrue(msg.startsWith("Score: 42"))
-        assertTrue(msg.contains("£17.54/h"))
-        assertTrue(msg.contains("£1.58/mi"))
-        assertTrue('\n' in msg)
+    fun overlay_is_hour_score_mile_without_score_label() {
+        val msg = formatLiveOfferOverlay(ride(15.79, 7, 47, 1.9, 8.1), 42)
+        assertEquals("£17.54/h   42   £1.58/mi", msg)
+        assertFalse(msg.contains("Score", ignoreCase = true))
     }
 
     @Test
-    fun overlay_keeps_suffix_after_rates() {
-        val msg = formatScoreOverlayMessage(
-            31,
-            ride(8.16, 7, 20, 1.5, 3.8),
-            suffix = "Accepted (finding button…)",
-        )
-        assertTrue(msg.contains("£/h") || msg.contains("/h"))
-        assertTrue(msg.endsWith("Accepted (finding button…)"))
+    fun overlay_without_score_is_rates_only() {
+        val msg = formatRatesOnlyOverlayMessage(ride(15.79, 7, 47, 1.9, 8.1))
+        assertEquals("£17.54/h   £1.58/mi", msg)
+        assertFalse(msg!!.contains("Score", ignoreCase = true))
+        assertFalse(msg.contains("42"))
+        val parts = parseLiveOfferOverlay(msg)!!
+        assertEquals("£17.54/h", parts.perHour)
+        assertNull(parts.score)
+        assertEquals("£1.58/mi", parts.perMile)
+    }
+
+    @Test
+    fun parse_live_overlay_reads_hour_score_mile() {
+        val parts = parseLiveOfferOverlay("£27.86/h   50   £4.64/mi")!!
+        assertEquals("£27.86/h", parts.perHour)
+        assertEquals(50, parts.score)
+        assertEquals("£4.64/mi", parts.perMile)
     }
 
     @Test
     fun history_line_matches_overlay_rates() {
         val line = formatOfferEarningsLine(ride(6.43, 8, 13, 1.0, 1.9))
-        // 6.43 / 21 min * 60 = 18.37; 6.43 / 2.9 mi = 2.22
         assertEquals("£18.37/h  £2.22/mi", line)
     }
 }

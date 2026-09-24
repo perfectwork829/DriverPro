@@ -40,8 +40,7 @@ import com.driver.pro.network.logRideRequestPayload
 import com.driver.pro.network.rideRequestHttpBody
 import com.driver.pro.network.validateRideBeforeScoring
 import com.driver.pro.saveNewRequest
-import com.driver.pro.utils.formatOfferEarningsLine
-import com.driver.pro.utils.formatScoreOverlayMessage
+import com.driver.pro.utils.formatLiveOfferOverlay
 import com.google.mlkit.vision.text.Text
 import kotlinx.coroutines.*
 import java.time.LocalTime
@@ -1780,12 +1779,6 @@ const val ACTION_DRIVERPRO_CAPTURE_STARTED = "com.driver.pro.ACTION_CAPTURE_STAR
 /** OCR could not place a tap — ask [DriverAppAccessibilityService] to find Confirm / X in the node tree. */
 const val ACTION_A11Y_TAP_DECISION = "com.driver.pro.ACTION_A11Y_TAP_DECISION"
 
-/** Show touchable Accept / Decline / Skip overlay when OCR is incomplete or low-confidence. */
-const val ACTION_SHOW_MANUAL_CONFIRM = "com.driver.pro.ACTION_SHOW_MANUAL_CONFIRM"
-
-/** Below this OCR accuracy, auto-accept/reject pauses for a manual confirm window. */
-const val LOW_OCR_CONFIDENCE_THRESHOLD = 80
-
 class ScreenCaptureService : Service() {
 
     private var mediaProjection: MediaProjection? = null
@@ -1805,6 +1798,8 @@ class ScreenCaptureService : Service() {
     private var sameRideIndex: Int = 0
     private val ocrStabilityGate = OcrStabilityGate(requiredMatches = 1)
     private var lastReadingOfferToastAt: Long = 0L
+    private var lastResultBannerKey: String = ""
+    private var lastResultBannerAt: Long = 0L
     private var lastScreenHash: Int? = null
     private var cropHeight: Int = 0
 
@@ -2274,16 +2269,6 @@ class ScreenCaptureService : Service() {
 
     private fun runOCR(bitmap: Bitmap) {
         Log.d("MY-BROADCAST", "ocr real start")
-        // Pause OCR while the driver is deciding on the confirm window.
-        if (DriverAppAccessibilityService.isManualConfirmVisible) {
-            if (!bitmap.isRecycled) {
-                try {
-                    bitmap.recycle()
-                } catch (_: Exception) {
-                }
-            }
-            return
-        }
         screenCaptureWidth = bitmap.width
         screenCaptureHeight = bitmap.height
         val work = scaleDownForOcr(bitmap)
@@ -2390,16 +2375,8 @@ class ScreenCaptureService : Service() {
                     Log.w("driverPRO-OCR", ocrError)
                     ocrStabilityGate.reset()
                     saveDebugOcrAttempt(ride, updatedText, imageUri?.toString(), ocrError)
-                    val missing = listMissingRideFields(ride, updatedText)
-                    reportNoScore(ocrError, missing)
-                    requestManualConfirm(
-                        title = "Unsure reading — decide manually",
-                        detail = formatIncompleteOverlayMessage(ocrError, missing) +
-                            "\n£${"%.2f".format(ride.price)} · " +
-                            "${ride.pickup_address_postcode ?: "?"} → ${ride.dropoff_address_postcode ?: "?"}",
-                        suggestedStatus = 0,
-                        score = 0,
-                    )
+                    // No server score and no Accept/Decline prompt — rates only.
+                    broadcastResultBanner(ride, score = null, holdMs = 4000L)
                     return@addOnSuccessListener
                 }
 
@@ -2440,89 +2417,54 @@ class ScreenCaptureService : Service() {
                     if (rideRequest == null) {
                         val err = responseResult.exceptionOrNull()?.message ?: "unknown error"
                         Log.e("MY-BROADCAST", "ride scoring failed: $err")
-                        reportNoScore(err)
+                        broadcastResultBanner(ride, score = null, holdMs = 4000L)
                     } else {
                         val scored = rideRequest.copy(
                             raw_text = ride.raw_text,
                             ocr_image_uri = ride.ocr_image_uri,
                             accuracy = ride.accuracy,
                         )
-                        val score = scored.final_score ?: 0
-                        val scoreOverlay = formatScoreOverlayMessage(score, scored)
-                        val lowConfidence = scored.accuracy < LOW_OCR_CONFIDENCE_THRESHOLD
-                        val needsManualConfirm =
-                            lowConfidence &&
-                                (scored.acceptedOrRejected == 1 || scored.acceptedOrRejected == -1)
+                        val score = scored.final_score
+                        val scoreForTap = score ?: 0
+                        val scoreOverlay = formatLiveOfferOverlay(scored, score)
 
-                        if (needsManualConfirm) {
-                            val action = if (scored.acceptedOrRejected == 1) "Accept" else "Reject"
-                            val earnings = formatOfferEarningsLine(scored)
-                            requestManualConfirm(
-                                title = "Low confidence — confirm $action?",
-                                detail = "Score: $score · OCR ${scored.accuracy}%\n" +
-                                    "£${"%.2f".format(scored.price)} · " +
-                                    "${scored.pickup_address_postcode ?: "?"} → " +
-                                    "${scored.dropoff_address_postcode ?: "?"}\n" +
-                                    (if (earnings != null) "$earnings\n" else "") +
-                                    "Suggested: $action",
-                                suggestedStatus = scored.acceptedOrRejected,
-                                score = score,
-                            )
-                            // Score UI is the accessibility overlay only — do not also Toast
-                            // (Toast appears mid-screen over Match and duplicates the overlay).
-                        } else if (scored.acceptedOrRejected == 1) {
+                        if (scored.acceptedOrRejected == 1) {
                             val tapped = captureAndSendTap(
                                 result,
                                 acceptTapKeys,
-                                score,
+                                scoreForTap,
                                 scored.acceptedOrRejected,
                                 scoreOverlay,
                             )
                             if (!tapped) {
                                 sendAccessibilityFallbackTap(
                                     scored.acceptedOrRejected,
-                                    score,
-                                    formatScoreOverlayMessage(
-                                        score,
-                                        scored,
-                                        suffix = "Accepted (finding button…)",
-                                    ),
+                                    scoreForTap,
+                                    formatLiveOfferOverlay(scored, score),
                                 )
                             }
                         } else if (scored.acceptedOrRejected == -1) {
                             val tapped = captureAndSendDismiss(
                                 result,
-                                score,
+                                scoreForTap,
                                 scored.acceptedOrRejected,
                                 scoreOverlay,
                             ) || captureAndSendTap(
                                 result,
                                 rejectTapKeys,
-                                score,
+                                scoreForTap,
                                 scored.acceptedOrRejected,
                                 scoreOverlay,
                             )
                             if (!tapped) {
                                 sendAccessibilityFallbackTap(
                                     scored.acceptedOrRejected,
-                                    score,
-                                    formatScoreOverlayMessage(
-                                        score,
-                                        scored,
-                                        suffix = "Rejected (finding close…)",
-                                    ),
+                                    scoreForTap,
+                                    formatLiveOfferOverlay(scored, score),
                                 )
                             }
                         } else {
-                            val intent = Intent("ACTION_CLICK_CONFIRM").apply {
-                                putExtra("x", 0)
-                                putExtra("y", 0)
-                                putExtra("message", scoreOverlay)
-                                putExtra("status", scored.acceptedOrRejected)
-                                putExtra("hold_ms", 3200L)
-                                setPackage(applicationContext.packageName)
-                            }
-                            applicationContext.sendBroadcast(intent)
+                            broadcastResultBanner(scored, score, holdMs = 3200L)
                         }
 
                         saveNewRequest(applicationContext, "RIDE-REQUESTS", scored)
@@ -2664,37 +2606,22 @@ class ScreenCaptureService : Service() {
         )
     }
 
-    private fun reportNoScore(reason: String, missingFields: List<String> = emptyList()) {
-        val message = formatIncompleteOverlayMessage(reason, missingFields)
-        Log.d("MY-BROADCAST", message)
-        // Top overlay only — Android Toast sits over the offer card and blocks drop-address OCR
-        // on the next frame (self-inflicted "missing drop-off postcode" loops).
+    private fun broadcastResultBanner(ride: RideRequest, score: Int?, holdMs: Long = 3200L) {
+        val message = formatLiveOfferOverlay(ride, score)
+        if (message.isBlank()) return
+        val now = System.currentTimeMillis()
+        val key = "${score ?: "none"}|$message"
+        if (key == lastResultBannerKey && now - lastResultBannerAt < 2500L) return
+        lastResultBannerKey = key
+        lastResultBannerAt = now
         applicationContext.sendBroadcast(
             Intent("ACTION_CLICK_CONFIRM").apply {
                 putExtra("x", 0)
                 putExtra("y", 0)
                 putExtra("message", message)
                 putExtra("status", 0)
-                putExtra("top_only", true)
-                putExtra("hold_ms", 4000)
-                putStringArrayListExtra("missing_fields", ArrayList(missingFields))
-                setPackage(applicationContext.packageName)
-            },
-        )
-    }
-
-    private fun requestManualConfirm(
-        title: String,
-        detail: String,
-        suggestedStatus: Int,
-        score: Int,
-    ) {
-        applicationContext.sendBroadcast(
-            Intent(ACTION_SHOW_MANUAL_CONFIRM).apply {
-                putExtra("title", title)
-                putExtra("detail", detail)
-                putExtra("suggested_status", suggestedStatus)
-                putExtra("score", score)
+                putExtra("hold_ms", holdMs)
+                putExtra("result_banner", true)
                 setPackage(applicationContext.packageName)
             },
         )
@@ -2708,6 +2635,7 @@ class ScreenCaptureService : Service() {
             putExtra("message", message)
             putExtra("status", status)
             putExtra("hold_ms", 3200L)
+            putExtra("result_banner", true)
             setPackage(applicationContext.packageName)
         }
         applicationContext.sendBroadcast(intent)
@@ -2721,6 +2649,7 @@ class ScreenCaptureService : Service() {
                 putExtra("score", score)
                 putExtra("message", message)
                 putExtra("hold_ms", 3200L)
+                putExtra("result_banner", true)
                 setPackage(applicationContext.packageName)
             },
         )
@@ -2924,7 +2853,7 @@ class ScreenCaptureService : Service() {
         key: String,
         score: Int,
         acceptOrReject: Int = -1,
-        message: String = "Score: $score",
+        message: String = "",
     ): Boolean {
         val pattern = Regex("\\b${Regex.escape(key)}\\b", RegexOption.IGNORE_CASE)
 

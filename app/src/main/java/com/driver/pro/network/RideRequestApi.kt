@@ -1,10 +1,6 @@
 package com.driver.pro.network
 
 import com.driver.pro.RideRequest
-import com.driver.pro.service.isPlausibleMilesForMinutes
-import com.driver.pro.service.ocrHasDropAddressAfterTripLeg
-import com.driver.pro.service.ocrHasDropAddressStreetWithoutPostcode
-import com.driver.pro.service.ocrHasPickupAddressWithoutPostcode
 import com.google.gson.Gson
 
 private val rideGson = Gson()
@@ -92,18 +88,10 @@ fun validateRideForScoring(ride: RideRequest, ocrText: String? = null): String? 
         missing.add("trip distance")
     }
     if (ride.pickup_address_postcode.isNullOrBlank()) {
-        // Uber Electric / some Match cards show street + "London" only — no pickup outward on screen.
-        val uberOmitsPickupPc = !ocrText.isNullOrBlank() && ocrHasPickupAddressWithoutPostcode(ocrText)
-        if (!uberOmitsPickupPc) {
-            missing.add("pickup postcode")
-        }
+        missing.add("pickup postcode")
     }
     if (ride.dropoff_address_postcode.isNullOrBlank()) {
-        // Street visible but postcode OCR'd as orphan/map noise (e.g. "Keats Cl. Enfield." + "4SF").
-        val streetOnlyDrop = !ocrText.isNullOrBlank() && ocrHasDropAddressStreetWithoutPostcode(ocrText)
-        if (!streetOnlyDrop) {
-            missing.add("drop-off postcode")
-        }
+        missing.add("drop-off postcode")
     }
     if (ride.type.isBlank()) {
         missing.add("offer type (Confirm/Match label not read)")

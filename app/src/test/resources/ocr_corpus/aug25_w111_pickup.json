@@ -1,8 +1,8 @@
 {
   "id": "aug25_w111_pickup",
-  "note": "W111 is W11; Uber omitted drop postcode",
+  "note": "W111 is W11; Uber omitted drop postcode — parse W11, do not score without drop",
   "price": 4.87,
   "pickup_postcode": "W11",
   "drop_postcode": "",
-  "must_score": true
+  "must_not_score": true
 }

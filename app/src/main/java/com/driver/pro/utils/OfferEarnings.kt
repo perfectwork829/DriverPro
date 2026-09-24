@@ -57,11 +57,17 @@ fun computeOfferEarnings(ride: RideRequest): OfferEarnings = computeOfferEarning
 fun formatPoundsRate(value: Double): String =
     "£${String.format(Locale.UK, "%.2f", value)}"
 
+fun formatPerHourLabel(earnings: OfferEarnings): String? =
+    earnings.poundsPerHour?.let { "${formatPoundsRate(it)}/h" }
+
+fun formatPerMileLabel(earnings: OfferEarnings): String? =
+    earnings.poundsPerMile?.let { "${formatPoundsRate(it)}/mi" }
+
 /** Compact overlay/history line, e.g. `£24.50/h  £1.82/mi`. */
 fun formatOfferEarningsLine(earnings: OfferEarnings): String? {
     val parts = mutableListOf<String>()
-    earnings.poundsPerHour?.let { parts.add("${formatPoundsRate(it)}/h") }
-    earnings.poundsPerMile?.let { parts.add("${formatPoundsRate(it)}/mi") }
+    formatPerHourLabel(earnings)?.let { parts.add(it) }
+    formatPerMileLabel(earnings)?.let { parts.add(it) }
     return parts.takeIf { it.isNotEmpty() }?.joinToString("  ")
 }
 
@@ -69,25 +75,51 @@ fun formatOfferEarningsLine(ride: RideRequest): String? =
     formatOfferEarningsLine(computeOfferEarnings(ride))
 
 /**
- * Left-side live overlay. Second line is £/h and £/mi so the score stays readable
- * and does not sit over Match/Confirm.
+ * Live banner: £/h on the left, score in the middle (no "Score" label), £/mi on the right.
+ * Omit [score] when the job was not sent for a server score.
  */
+fun formatLiveOfferOverlay(ride: RideRequest, score: Int?): String {
+    val earnings = computeOfferEarnings(ride)
+    return listOfNotNull(
+        formatPerHourLabel(earnings),
+        score?.toString(),
+        formatPerMileLabel(earnings),
+    ).joinToString("   ")
+}
+
+/** @deprecated Use [formatLiveOfferOverlay]; kept so call sites compile during the rename. */
 fun formatScoreOverlayMessage(
     score: Int,
     ride: RideRequest,
     suffix: String = "",
 ): String {
-    val earnings = formatOfferEarningsLine(ride)
-    val head = buildString {
-        append("Score: $score")
-        if (earnings != null) {
-            append('\n')
-            append(earnings)
-        }
-        if (suffix.isNotBlank()) {
-            append(" — ")
-            append(suffix)
-        }
-    }
-    return head
+    val line = formatLiveOfferOverlay(ride, score)
+    return if (suffix.isBlank()) line else "$line\n$suffix"
+}
+
+/** Rates-only banner when postcode/score fields are missing. */
+fun formatRatesOnlyOverlayMessage(ride: RideRequest): String? {
+    val line = formatLiveOfferOverlay(ride, score = null)
+    return line.takeIf { it.isNotBlank() }
+}
+
+data class LiveOfferOverlayParts(
+    val perHour: String?,
+    val score: Int?,
+    val perMile: String?,
+)
+
+/** Parse the live banner line produced by [formatLiveOfferOverlay]. */
+fun parseLiveOfferOverlay(message: String): LiveOfferOverlayParts? {
+    val t = message.trim()
+    if (t.isEmpty()) return null
+    val hour = Regex("""£[\d.]+/h""").find(t)?.value
+    val mile = Regex("""£[\d.]+/mi""").find(t)?.value
+    val withoutRates = t
+        .replace(hour.orEmpty(), " ")
+        .replace(mile.orEmpty(), " ")
+        .trim()
+    val score = Regex("""^\d{1,3}$""").find(withoutRates)?.value?.toIntOrNull()
+    if (hour == null && mile == null && score == null) return null
+    return LiveOfferOverlayParts(hour, score, mile)
 }

@@ -108,14 +108,8 @@ fun listMissingRideFields(ride: RideRequest, ocrText: String? = null): List<Stri
     if (ride.trip_time_minutes == null) missing.add("trip time")
     if (ride.pickup_distance_value == null) missing.add("pickup distance")
     if (ride.trip_distance_value == null) missing.add("trip distance")
-    if (ride.pickup_address_postcode.isNullOrBlank()) {
-        val omit = !ocrText.isNullOrBlank() && ocrHasPickupAddressWithoutPostcode(ocrText)
-        if (!omit) missing.add("pickup postcode")
-    }
-    if (ride.dropoff_address_postcode.isNullOrBlank()) {
-        val omit = !ocrText.isNullOrBlank() && ocrHasDropAddressStreetWithoutPostcode(ocrText)
-        if (!omit) missing.add("drop-off postcode")
-    }
+    if (ride.pickup_address_postcode.isNullOrBlank()) missing.add("pickup postcode")
+    if (ride.dropoff_address_postcode.isNullOrBlank()) missing.add("drop-off postcode")
     if (ride.type.isBlank()) missing.add("Confirm/Match")
     return missing
 }

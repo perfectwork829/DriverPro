@@ -2,6 +2,7 @@ package com.driver.pro.service
 
 import com.driver.pro.network.validateRideBeforeScoring
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -90,7 +91,9 @@ class RideOcrClientBatchJuly25Test {
                 ride.pickup_address_postcode == "EC1M",
         )
         assertTrue(ride.pickup_address_postcode != "W1C")
-        assertNull(validateRideBeforeScoring(ride, text))
+        val err = validateRideBeforeScoring(ride, text)
+        assertNotNull(err)
+        assertTrue(err!!.contains("pickup postcode"))
     }
 
     @Test
@@ -148,7 +151,9 @@ class RideOcrClientBatchJuly25Test {
         val ride = fillMissingTripMetrics(text, parseRideInfo(text, null))
         assertEquals("EC1N", ride.pickup_address_postcode)
         assertTrue(ocrHasDropAddressStreetWithoutPostcode(text))
-        assertNull(validateRideBeforeScoring(ride, text))
+        val err = validateRideBeforeScoring(ride, text)
+        assertNotNull(err)
+        assertTrue(err!!.contains("drop-off postcode"))
     }
 
     @Test

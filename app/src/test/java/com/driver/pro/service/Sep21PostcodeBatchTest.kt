@@ -3,6 +3,7 @@ package com.driver.pro.service
 import com.driver.pro.RideRequest
 import com.driver.pro.network.validateRideBeforeScoring
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -82,7 +83,9 @@ class Sep21PostcodeBatchTest {
         assertEquals(12.01, ride.price, 0.05)
         assertEquals("NW9", ride.pickup_address_postcode)
         assertEquals("", ride.dropoff_address_postcode.orEmpty())
-        assertNull(validateRideBeforeScoring(ride, text))
+        val err = validateRideBeforeScoring(ride, text)
+        assertNotNull(err)
+        assertTrue(err!!.contains("drop-off postcode"))
     }
 
     @Test

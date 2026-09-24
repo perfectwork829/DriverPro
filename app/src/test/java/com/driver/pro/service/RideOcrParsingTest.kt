@@ -1560,11 +1560,12 @@ class RideOcrParsingTest {
         assertEquals(16.18, ride.price, 0.001)
         assertTrue(ride.pickup_address_postcode.isNullOrBlank())
         val err = validateRideBeforeScoring(ride, text)
-        assertTrue(err == null || !err.contains("pickup postcode"))
+        assertNotNull(err)
+        assertTrue(err!!.contains("pickup postcode"))
     }
 
     @Test
-    fun validateRideForScoring_allows_missing_pickup_pc_when_street_only_on_card() {
+    fun validateRideForScoring_requires_pickup_pc_even_when_street_only_on_card() {
         val ocr = """
             Electric
             £16.18
@@ -1588,7 +1589,9 @@ class RideOcrParsingTest {
             acceptedOrRejected = 0,
             type = "match",
         )
-        assertNull(validateRideForScoring(ride, ocr))
+        val err = validateRideForScoring(ride, ocr)
+        assertNotNull(err)
+        assertTrue(err!!.contains("pickup postcode"))
     }
 
     @Test
@@ -1613,9 +1616,10 @@ class RideOcrParsingTest {
         assertEquals(16.18, ride.price, 0.001)
         assertTrue(ride.pickup_address_postcode.isNullOrBlank())
         val err = validateRideBeforeScoring(ride, text)
+        assertNotNull(err)
         assertTrue(
-            "Should not block on missing pickup postcode, got: $err",
-            err == null || !err.contains("pickup postcode"),
+            "Missing pickup postcode must not be scored, got: $err",
+            err!!.contains("pickup postcode"),
         )
     }
 
