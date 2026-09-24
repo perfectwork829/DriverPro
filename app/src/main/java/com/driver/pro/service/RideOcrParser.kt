@@ -24,6 +24,22 @@ internal fun normalizeOcrOfferText(text: String): String {
         Regex("""\bHAS\s+([O0])([A-Za-z]{2})\b""", RegexOption.IGNORE_CASE),
         "HA9 0$2",
     )
+    // HAS 5BP → HA5 5BP (5 misread as S on Pinner cards). Do not steal HAS OYJ above.
+    out = out.replace(
+        Regex("""\bHAS\s+([1-9][A-Za-z]{2})\b""", RegexOption.IGNORE_CASE),
+        "HA5 $1",
+    )
+    // London. WN5 5JY → W5 5JY (N inserted; WN is Wigan).
+    // Also "Ealing Broadway" / next-line "WN5 5JY" when the dump is a London offer.
+    out = out.replace(
+        Regex("""\bLondon[.,]?\s+WN([1-9])\b""", RegexOption.IGNORE_CASE),
+        "London. W$1",
+    )
+    if (out.contains("London", ignoreCase = true) || out.contains("Ealing", ignoreCase = true)) {
+        out = out.replace(Regex("""\bWN([1-9])\b"""), "W$1")
+    }
+    // NWn0 / NWN0 → NW10 (1 misread as n on Willesden cards).
+    out = out.replace(Regex("""\bNW[nN][0oO]\b"""), "NW10")
     // SW1Ww 8BB → SW1W 8BB (duplicated sector letter).
     out = out.replace(
         Regex(
@@ -49,14 +65,34 @@ internal fun normalizeOcrOfferText(text: String): String {
         Regex("""\b(W|E|N)(1[1-4])(\d)\b"""),
         "$1$2 $3",
     )
-    // NW21LS / HA9GDE jammed full postcode (missing space before inward).
+    // NW21LS / HA9GDE / NW41SE jammed full postcode (missing space before inward).
+    // 1-digit district first so NW41SE → NW4 1SE, not a failed greedy NW41+SE.
     out = out.replace(
         Regex(
-            """\b(NW|SW|SE|EC|WC|HA|CR|W|N|E)(\d{1,2})(\d[A-Za-z]{2})\b""",
+            """\b(NW|SW|SE|EC|WC|HA|CR|W|N|E)(\d)(\d[A-Za-z]{2})\b""",
             RegexOption.IGNORE_CASE,
         ),
         "$1$2 $3",
     )
+    out = out.replace(
+        Regex(
+            """\b(NW|SW|SE|EC|WC|HA|CR|W|N|E)(\d{2})(\d[A-Za-z]{2})\b""",
+            RegexOption.IGNORE_CASE,
+        ),
+        "$1$2 $3",
+    )
+    // NW27 → NW2 7 (Uber clipped inward letters). Keep real 2-digit districts (NW10, SE14).
+    // Two-letter areas only — do not turn map "E30" into E3 0.
+    out = out.replace(Regex("""\b([A-Za-z]{2})(\d)(\d)\b""")) { m ->
+        val area = m.groupValues[1].uppercase()
+        val two = area + m.groupValues[2] + m.groupValues[3]
+        val one = area + m.groupValues[2]
+        if (area in UK_POSTCODE_AREAS && !isPlausibleLondonOutward(two) && isPlausibleLondonOutward(one)) {
+            "${m.groupValues[1]}${m.groupValues[2]} ${m.groupValues[3]}"
+        } else {
+            m.value
+        }
+    }
     // HA9 GDE → HA9 0DE (inward leading 0 misread as G).
     out = out.replace(
         Regex("""\b(HA9)\s+G([A-Za-z]{2})\b""", RegexOption.IGNORE_CASE),
@@ -1143,6 +1179,34 @@ internal fun isValidUkOutward(code: String): Boolean {
     return true
 }
 
+/** Shape-valid plus district number in range (NW27 is not a real NW district). */
+internal fun isPlausibleLondonOutward(code: String): Boolean {
+    if (!isValidUkOutward(code)) return false
+    val upper = code.uppercase()
+    val letters = upper.takeWhile { it.isLetter() }
+    val digits = upper.drop(letters.length).takeWhile { it.isDigit() }.toIntOrNull() ?: return false
+    val max = when (letters) {
+        "E" -> 20
+        "EC" -> 4
+        "N" -> 22
+        "NW" -> 11
+        "SE" -> 28
+        "SW" -> 20
+        "W" -> 14
+        "WC" -> 2
+        "HA" -> 9
+        "CR" -> 9
+        "BR" -> 8
+        "TW" -> 20
+        "UB" -> 11
+        "KT" -> 24
+        "SL" -> 9
+        "EN" -> 11
+        else -> 99
+    }
+    return digits <= max
+}
+
 /** True when [outward] appears as its own district token — GU2 must not match inside GU21.
  *  Also accepts OCR digit letters: SEl→SE1, El→E1, ECIN→EC1N.
  */
@@ -1482,6 +1546,20 @@ fun ocrLastDropAddressOmitsPostcode(ocrText: String): Boolean {
         !isJunk(line) && (isPostcodeOnlyLine(line) || inwardOnly.matches(line))
     }
     if (prev != null) {
+        val prevLine = lines[prev]
+        // "NW41SE" / "NW4 1SE" above the street is the drop PC, not a pickup wrap.
+        if (isFullPostcodeOnlyLine(prevLine) ||
+            extractOuterLondonPostcodes(prevLine).any { pc ->
+                isValidUkOutward(pc) &&
+                    (lineHasFullInwardStrict(prevLine, pc) ||
+                        Regex(
+                            """\b${Regex.escape(pc)}\d[A-Za-z]{2}\b""",
+                            RegexOption.IGNORE_CASE,
+                        ).containsMatchIn(prevLine))
+            }
+        ) {
+            return false
+        }
         val ownerHasOutward = ((dropLegIdx + 1) until prev).any { idx ->
             val line = lines[idx]
             !isJunk(line) && extractOuterLondonPostcodes(line).isNotEmpty()
@@ -1662,8 +1740,16 @@ internal fun isPostcodeOnlyLine(line: String): Boolean {
 internal fun isFullPostcodeOnlyLine(line: String): Boolean {
     if (!isPostcodeOnlyLine(line)) return false
     val trimmed = line.trim()
+    if (Regex(
+            """^[A-Za-z]{1,2}[0-9iIlLoO]{1,2}\s+[0-9oO][A-Za-z]{2}$""",
+            RegexOption.IGNORE_CASE,
+        ).matches(trimmed)
+    ) {
+        return true
+    }
+    // Jammed "NW41SE" / "SL41LH" — 1-digit district then inward (do not greedily eat NW41).
     return Regex(
-        """^[A-Za-z]{1,2}[0-9iIlLoO]{1,2}\s*[0-9oO][A-Za-z]{2}$""",
+        """^[A-Za-z]{1,2}[0-9iIlLoO][0-9oO][A-Za-z]{2}$""",
         RegexOption.IGNORE_CASE,
     ).matches(trimmed)
 }
@@ -1834,6 +1920,23 @@ internal fun recoverPickupDropWhenInwardBetweenLegs(
                 addressWord.containsMatchIn(line))
     }
     if (after.size < 2) return null
+    val first = after[0]
+    val second = after[1]
+    val firstIsStreet = Regex(
+        """\b(Road|Rd|Street|St|Avenue|Ave|Lane|Way|Drive|Dr|Centre|Center)\b""",
+        RegexOption.IGNORE_CASE,
+    ).containsMatchIn(first)
+    val secondIsVenue = Regex(
+        """\b(Hospital|Station|Hotel|Clinic|School|University)\b""",
+        RegexOption.IGNORE_CASE,
+    ).containsMatchIn(second)
+    if (firstIsStreet && secondIsVenue) {
+        val pickup = pickBestPostcodeInLineRange(listOf(first), 0, 1, minScore = 0)
+        val drop = pickBestPostcodeInLineRange(listOf(second), 0, 1, minScore = 0)
+        if (pickup.isNotBlank() && drop.isNotBlank() && pickup != drop) {
+            return pickup to drop
+        }
+    }
     val incomplete = after.filter { line ->
         extractOuterLondonPostcodes(line).any { pc ->
             isValidUkOutward(pc) && !lineHasFullInwardStrict(line, pc)
