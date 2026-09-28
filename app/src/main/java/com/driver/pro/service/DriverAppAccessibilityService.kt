@@ -86,6 +86,10 @@ open class DriverAppAccessibilityService : AccessibilityService() {
         @Volatile
         private var instance: DriverAppAccessibilityService? = null
 
+        /** True while the live £/h · score · £/mi banner is on screen (pauses OCR). */
+        @Volatile
+        var isResultBannerVisible: Boolean = false
+
         /** Latest Accessibility snapshot of on-screen text (empty if service off). */
         fun snapshotOfferText(): String? {
             return try {
@@ -493,7 +497,7 @@ open class DriverAppAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** Screen-centre banner: £/h left, score in the middle (no label), £/mi right. */
+    /** Map-top banner: £/h left, score in the middle (no label), £/mi right. Stays off the Uber fare. */
     private fun showResultBanner(parts: LiveOfferOverlayParts, holdMs: Long) {
         Handler(mainLooper).post {
             try {
@@ -511,7 +515,7 @@ open class DriverAppAccessibilityService : AccessibilityService() {
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(16), dp(10), dp(16), dp(10))
+                    setPadding(dp(16), dp(8), dp(16), dp(8))
                     background = GradientDrawable().apply {
                         setColor(Color.argb(215, 18, 18, 22))
                         cornerRadius = dp(14).toFloat()
@@ -534,7 +538,7 @@ open class DriverAppAccessibilityService : AccessibilityService() {
                 }
 
                 row.addView(cell(parts.perHour.orEmpty(), 16f))
-                row.addView(cell(parts.score?.toString().orEmpty(), 32f, bold = true))
+                row.addView(cell(parts.score?.toString().orEmpty(), 42f, bold = true))
                 row.addView(cell(parts.perMile.orEmpty(), 16f))
 
                 val params = WindowManager.LayoutParams(
@@ -549,14 +553,18 @@ open class DriverAppAccessibilityService : AccessibilityService() {
                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                     PixelFormat.TRANSLUCENT,
                 ).apply {
-                    // Vertical + horizontal centre of the screen; touches pass through to Match.
-                    gravity = Gravity.CENTER
+                    gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                    val statusBarId = resources.getIdentifier("status_bar_height", "dimen", "android")
+                    val statusBarHeight =
+                        if (statusBarId > 0) resources.getDimensionPixelSize(statusBarId) else dp(24)
+                    y = statusBarHeight + dp(8)
                     width = resources.displayMetrics.widthPixels - dp(24)
                 }
 
                 val wm = getSystemService(WINDOW_SERVICE) as WindowManager
                 wm.addView(row, params)
                 resultBannerView = row
+                isResultBannerVisible = true
                 val dismiss = Runnable { dismissResultBanner() }
                 resultBannerDismissRunnable = dismiss
                 Handler(mainLooper).postDelayed(dismiss, holdMs.coerceIn(800L, 8000L))
@@ -567,6 +575,7 @@ open class DriverAppAccessibilityService : AccessibilityService() {
     }
 
     private fun dismissResultBanner() {
+        isResultBannerVisible = false
         resultBannerDismissRunnable?.let { Handler(mainLooper).removeCallbacks(it) }
         resultBannerDismissRunnable = null
         val view = resultBannerView

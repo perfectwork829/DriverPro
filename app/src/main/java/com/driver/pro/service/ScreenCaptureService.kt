@@ -311,6 +311,7 @@ fun extractTime(text: String): List<String> {
 }
 
 fun extractPrice(text: String): List<Double> {
+    val text = stripOverlayEarnings(text)
     val priceRegex = Regex("""£\s*($OCR_DIGIT{1,3})(?:\.($OCR_DIGIT{1,2}))?""", RegexOption.IGNORE_CASE)
     return priceRegex.findAll(text).mapNotNull { match ->
         val frac = match.groupValues[2]
@@ -327,6 +328,7 @@ fun extractPrice(text: String): List<Double> {
 
 /** Best-effort fare from OCR — prefers main £ amount, then large standalone decimals (e.g. 42.47). */
 fun extractBestPrice(text: String): Double {
+    val text = stripOverlayEarnings(text)
     val poundDecimalAmounts = mutableListOf<Double>()
     val poundWholeAmounts = mutableListOf<Double>()
     val bareAmounts = mutableListOf<Double>()
@@ -1993,6 +1995,12 @@ class ScreenCaptureService : Service() {
 
                 val ts = System.currentTimeMillis()
                 if (ts - lastRun < OCR_INTERVAL) {
+                    image.close()
+                    return@setOnImageAvailableListener
+                }
+                // Overlay is captured by MediaProjection. Skip OCR while it is up so £/h
+                // cannot be read as a new Uber fare (that loop is what flooded History).
+                if (DriverAppAccessibilityService.isResultBannerVisible) {
                     image.close()
                     return@setOnImageAvailableListener
                 }

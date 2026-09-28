@@ -445,6 +445,59 @@ class RideOcrParsingTest {
     }
 
     @Test
+    fun extractBestPrice_ignores_overlay_pounds_per_hour() {
+        val withBanner = """
+            £24.46/h   33   £1.10/mi
+            Electric Exclusive
+            £13.86
+            ★ 4.42
+            15 min (6.1 mi)
+            Amigos Burgers & Shakes, Feltham, TW13 4BS
+            19 mins (6.5 mi)
+            1 Wyatt Close, Hayes, UB4 0BT
+            Confirm
+        """.trimIndent()
+        assertEquals(13.86, extractBestPrice(withBanner), 0.001)
+        val merged = "£24.46/h   33   £1.10/mi £13.86\n15 min (6.1 mi)\nConfirm"
+        assertEquals(13.86, extractBestPrice(merged), 0.001)
+        val wrapped = """
+            £24.46
+            /h   33
+            £1.10
+            /mi
+            £13.86
+            15 min (6.1 mi)
+        """.trimIndent()
+        assertEquals(13.86, extractBestPrice(wrapped), 0.001)
+        assertEquals(
+            13.86,
+            extractBestPrice("E24.46/h\n£13.86\n15 min (6.1 mi)\nConfirm"),
+            0.001,
+        )
+    }
+
+    @Test
+    fun parseRideInfo_overlay_rates_do_not_replace_uber_fare() {
+        val text = """
+            Electric Exclusive
+            £24.46/h   33   £1.10/mi
+            £13.86
+            ★ 4.42
+            Cash payment
+            £0.74 est. holiday entitlement included
+            15 min (6.1 mi)
+            Amigos Burgers & Shakes, Feltham, TW13 4BS
+            19 mins (6.5 mi)
+            1 Wyatt Close, Hayes, UB4 0BT
+            Confirm
+        """.trimIndent()
+        val ride = fillMissingTripMetrics(text, parseRideInfo(text, null))
+        assertEquals(13.86, ride.price, 0.05)
+        assertEquals("TW13", ride.pickup_address_postcode)
+        assertEquals("UB4", ride.dropoff_address_postcode)
+    }
+
+    @Test
     fun fare_ignores_priority_included_addon_lines() {
         val lines = listOf(
             OcrLine("Electric Priority", 0),

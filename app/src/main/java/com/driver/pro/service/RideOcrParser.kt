@@ -797,6 +797,24 @@ internal fun parseTripLegFromLine(line: String): TripLegParse? {
     return TripLegParse(totalMinutes, miles)
 }
 
+/** DriverPro live banner rates — never the Uber fare (e.g. `£24.46/h   33   £1.10/mi`). */
+internal fun stripOverlayEarnings(text: String): String {
+    var out = text
+    val money = """[£${'$'}EeFf]"""
+    // OCR often wraps: "£24.46" then "/h" on the next line.
+    out = out.replace(
+        Regex("$money\\s*[\\d.,]+\\s*[\\n\\r]+\\s*/\\s*h\\b", RegexOption.IGNORE_CASE),
+        " ",
+    )
+    out = out.replace(
+        Regex("$money\\s*[\\d.,]+\\s*[\\n\\r]+\\s*/\\s*mi\\b", RegexOption.IGNORE_CASE),
+        " ",
+    )
+    out = out.replace(Regex("$money?\\s*[\\d.,]+\\s*/\\s*h\\b", RegexOption.IGNORE_CASE), " ")
+    out = out.replace(Regex("$money?\\s*[\\d.,]+\\s*/\\s*mi\\b", RegexOption.IGNORE_CASE), " ")
+    return out
+}
+
 /** Priority/holiday add-on lines are not the main trip fare (e.g. "+£2.55 included for priority"). */
 internal fun isAddonFareLine(line: String): Boolean {
     val lower = line.lowercase().trim()
@@ -830,29 +848,35 @@ internal fun lineHasCurrencySymbol(line: String): Boolean {
  * Prefer £ lines, then reject rating-shaped decimals when a lower fare exists.
  */
 internal fun pickFareFromHeaderLines(headerLines: List<OcrLine>, fullText: String): Double? {
-    val headerText = headerLines.joinToString("\n") { it.text }
-    val fromPoundLines = headerLines
-        .filterNot { isAddonFareLine(it.text) }
+    val headerText = stripOverlayEarnings(headerLines.joinToString("\n") { it.text })
+    val full = stripOverlayEarnings(fullText)
+    val fromPoundLines = headerText.lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .filterNot { isAddonFareLine(it) }
         .mapNotNull { line ->
-            val t = normalizeOcrCurrencyLine(line.text)
+            val t = normalizeOcrCurrencyLine(line)
             if (lineHasCurrencySymbol(t)) parseFareFromLine(t) else null
         }
         .filter { it >= 3.0 }
+        .toList()
     if (fromPoundLines.isNotEmpty()) return fromPoundLines.maxOrNull()
 
-    val fares = headerLines
-        .filterNot { isAddonFareLine(it.text) }
-        .mapNotNull { parseFareFromLine(it.text) }
+    val fares = headerText.lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .filterNot { isAddonFareLine(it) }
+        .mapNotNull { parseFareFromLine(it) }
         .toMutableList()
     collectBareTripFares(headerText).forEach { fare ->
         if (fare !in fares) fares.add(fare)
     }
-    if (fares.isEmpty()) return extractOfferFareFromText(fullText) ?: parseFareFromLine(fullText)
+    if (fares.isEmpty()) return extractOfferFareFromText(full) ?: parseFareFromLine(full)
 
     val likelyTripFare = fares.filter { it >= 5.0 }
     if (likelyTripFare.isNotEmpty()) return likelyTripFare.maxOrNull()
 
-    val fullTextFare = extractOfferFareFromText(fullText)
+    val fullTextFare = extractOfferFareFromText(full)
     if (fullTextFare != null && fullTextFare >= 5.0) return fullTextFare
 
     val likelyRatingBand = fares.filter { it in 4.0..5.05 }
@@ -891,6 +915,7 @@ internal fun collectBareTripFares(text: String): List<Double> {
 }
 
 internal fun extractOfferFareFromText(text: String): Double? {
+    val text = stripOverlayEarnings(text)
     val amounts = extractPrice(text).toMutableList()
     collectBareTripFares(text).forEach { amounts.add(it) }
     Regex("""[£$]\s*(\d{2,3})(?!\d|[.,])""").findAll(text).forEach { m ->
@@ -920,8 +945,9 @@ fun parseFareFromLine(line: String): Double? {
 }
 
 private fun parseFareFromSingleLine(rawLine: String): Double? {
-    if (isAddonFareLine(rawLine)) return null
-    val line = normalizeOcrCurrencyLine(rawLine)
+    val stripped = stripOverlayEarnings(rawLine)
+    if (isAddonFareLine(stripped) || isAddonFareLine(rawLine)) return null
+    val line = normalizeOcrCurrencyLine(stripped)
     val lower = line.lowercase()
 
     val candidates = mutableListOf<Double>()
