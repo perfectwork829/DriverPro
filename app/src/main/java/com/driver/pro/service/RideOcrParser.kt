@@ -102,7 +102,14 @@ internal fun normalizeOcrOfferText(text: String): String {
             m.value
         }
     }
-    // HA9 GDE → HA9 0DE (inward leading 0 misread as G).
+    // SE5 OJD / W6 OXU — inward leading 0 misread as O.
+    out = out.replace(
+        Regex(
+            """\b([A-Za-z]{1,2}[0-9]{1,2}[A-Za-z]?)\s+O([A-Za-z]{2})\b""",
+            RegexOption.IGNORE_CASE,
+        ),
+        "$1 0$2",
+    )
     out = out.replace(
         Regex("""\b(HA9)\s+G([A-Za-z]{2})\b""", RegexOption.IGNORE_CASE),
         "$1 0$2",
@@ -118,13 +125,23 @@ internal fun normalizeOcrOfferText(text: String): String {
         Regex("""\b(HA1)\s+(\d)0([A-Za-z])\b""", RegexOption.IGNORE_CASE),
         "$1 $2U$3",
     )
-    // SWIH0 / SWIH 0 / SWIW OEN → SW1H 0 / SW1W OEN (1 as I; truncated or full inward).
+    // SWIH0 / SWIH 0 / SWIW OEN / SwiV ILH → SW1H 0 / SW1W OEN / SW1V 1LH
+    // (1 as I on the outward; inward may also start with I/l for 1).
     // Do not eat NWIO 1PP (O is the 0 of NW10 — O is not a central sector letter).
     out = out.replace(
         Regex(
-            """\b(SW|EC|WC|NW|SE)[IilL]([ABEHNPRVWXYabehnprvwxy])\s*([0-9oO](?:[A-Za-z]{2})?)\b""",
+            """\b(SW|EC|WC|NW|SE)[IilL]([ABEHNPRVWXYabehnprvwxy])\s*([0-9oOiIlL](?:[A-Za-z]{2})?)\b""",
+            RegexOption.IGNORE_CASE,
         ),
-    ) { "${it.groupValues[1]}1${it.groupValues[2]} ${it.groupValues[3]}" }
+    ) {
+        val inward = it.groupValues[3]
+        val fixedInward = if (inward.isNotEmpty() && inward[0] in "IiLl") {
+            "1${inward.drop(1)}"
+        } else {
+            inward
+        }
+        "${it.groupValues[1].uppercase()}1${it.groupValues[2].uppercase()} $fixedInward"
+    }
     // WIF 7HL / WIH 2HQ — digit 1 as I, even when the line has no "London".
     out = out.replace(
         Regex("""\bWI([FDUHJW])\s+([0-9oO][A-Za-z]{2})\b""", RegexOption.IGNORE_CASE),
@@ -1376,6 +1393,7 @@ internal fun pickBestPostcodeInLineRange(
     for (i in startInclusive until endExclusive.coerceAtMost(lines.size)) {
         val line = lines[i]
         if (lineLooksLikeBareMapDistrictLabel(line)) continue
+        if (lineLooksLikeMapRoadChrome(line)) continue
         val next = lines.getOrNull(i + 1)?.trim().orEmpty()
         val prev = lines.getOrNull(i - 1)?.trim().orEmpty()
         // Include adjacent inward so "London, NW4"+"4XW" / "3NW"+"London. Wl" score.
@@ -1452,6 +1470,7 @@ internal fun lineHasRecoveredFullPostcodeOnAddress(line: String, outward: String
 internal fun lineLooksLikeMotorwayMapLabel(line: String): Boolean {
     val t = line.trim()
     if (t.isEmpty()) return false
+    if (lineLooksLikeMapRoadChrome(t)) return true
     if (Regex("""^[AM]\d{1,3}\s*$""", RegexOption.IGNORE_CASE).matches(t)) return true
     val compact = t.replace(" ", "").uppercase()
     if (compact == "WD25" || compact == "M25") return true
@@ -1465,6 +1484,14 @@ internal fun lineLooksLikeMotorwayMapLabel(line: String): Boolean {
     ) {
         return true
     }
+    return false
+}
+
+/** Heathrow map "BATH ROAD" OCR'd as `-BA4-ROAD-` / `BA4 ROAD` — not Bath BA4. */
+internal fun lineLooksLikeMapRoadChrome(line: String): Boolean {
+    val compact = line.trim().uppercase().replace(" ", "")
+    if (compact.contains("BATHROAD")) return true
+    if (Regex("""BA\d-?ROAD""").containsMatchIn(compact)) return true
     return false
 }
 
@@ -1554,6 +1581,7 @@ fun ocrLastDropAddressOmitsPostcode(ocrText: String): Boolean {
 
     fun looksLikeStreet(line: String): Boolean {
         if (isJunk(line)) return false
+        if (lineLooksLikeMapPoiBetweenAddresses(line)) return false
         if (isPostcodeOnlyLine(line) || inwardOnly.matches(line)) return false
         return line.contains(',') || streetWord.containsMatchIn(line) ||
             (line.contains("London", ignoreCase = true) && line.length > 10)
@@ -1874,6 +1902,10 @@ fun resolvePostcodesFromLegZones(ocrText: String): Pair<String, String> {
         if (p.isNotBlank()) pickup = p
         if (d.isNotBlank()) drop = d
     }
+    recoverPickupDropWhenLegsStackedThenAddresses(lines, pickupLegIdx, dropLegIdx)?.let { (p, d) ->
+        if (p.isNotBlank()) pickup = p
+        if (d.isNotBlank()) drop = d
+    }
     recoverPickupLocationLabel(lines, pickupLegIdx)?.let { (p, d) ->
         if (p.isNotBlank()) pickup = p
         if (d.isNotBlank()) drop = d
@@ -1913,6 +1945,9 @@ internal fun recoverPickupLocationLabel(
     val others = mutableListOf<String>()
     for (i in pickupLegIdx + 1 until lines.size) {
         if (i == locIdx) continue
+        if (lineLooksLikeMapRoadChrome(lines[i]) || lineLooksLikeBareMapDistrictLabel(lines[i])) {
+            continue
+        }
         for (pc in extractOuterLondonPostcodes(lines[i])) {
             if (isValidUkOutward(pc) && pc != pickupPc && pc !in others) others.add(pc)
         }
@@ -1935,6 +1970,85 @@ internal fun recoverOrphanPostcodeBeforePickup(
         if (pc.isNotBlank() && pc != pickupPc) return pc
     }
     return null
+}
+
+/**
+ * Both time lines OCR'd first, then drop address, then pickup, with a map pin
+ * (e.g. Ebury Square) between them. Visual card still has pickup between the times.
+ * Do not swap ordinary dumps that list pickup then drop after stacked times
+ * (Shepherd's Bush → Clapham, Meadowbank → Northwick Park).
+ */
+internal fun recoverPickupDropWhenLegsStackedThenAddresses(
+    lines: List<String>,
+    pickupLegIdx: Int,
+    dropLegIdx: Int,
+): Pair<String, String>? {
+    val betweenHasPc = ((pickupLegIdx + 1) until dropLegIdx).any { i ->
+        extractOuterLondonPostcodes(lines[i]).any { isValidUkOutward(it) }
+    }
+    if (betweenHasPc) return null
+    val addressWord = Regex(
+        """\b(Road|Street|Gardens|Park|Hotel|House|Lane|Way|Close|Station|Square|Court|Inhabit)\b""",
+        RegexOption.IGNORE_CASE,
+    )
+    val after = mutableListOf<Int>()
+    for (i in (dropLegIdx + 1) until lines.size) {
+        val line = lines[i]
+        if (line.equals("Match", ignoreCase = true) || line.equals("Confirm", ignoreCase = true)) {
+            break
+        }
+        if (lineLooksLikeMapRoadChrome(line) || lineLooksLikeBareMapDistrictLabel(line)) {
+            continue
+        }
+        val pcs = extractOuterLondonPostcodes(line).filter { isValidUkOutward(it) }
+        if (pcs.isEmpty()) continue
+        val looksLikeAddress = line.contains(',') ||
+            line.contains("London", ignoreCase = true) ||
+            addressWord.containsMatchIn(line)
+        if (looksLikeAddress || isFullPostcodeOnlyLine(line)) {
+            after.add(i)
+        }
+    }
+    if (after.size < 2) return null
+    val first = after.first()
+    val last = after.last()
+    val mapPinBetween = ((first + 1) until last).any { i ->
+        lineLooksLikeMapPoiBetweenAddresses(lines[i])
+    }
+    val lastRaw = lines[last]
+    val lastIncomplete = extractOuterLondonPostcodes(lastRaw).any { isValidUkOutward(it) } &&
+        extractOuterLondonPostcodes(lastRaw).none { lineHasFullInwardStrict(lastRaw, it) }
+    val nextIsInward = lines.getOrNull(last + 1)?.let { nxt ->
+        Regex("""^\s*[0-9oO][A-Za-z]{2}\s*$""", RegexOption.IGNORE_CASE).matches(nxt)
+    } == true
+    // Swap only when OCR clearly read drop first: map pin between the two, or
+    // last address is truncated with the inward on the next line (W2 / 3BA).
+    if (!mapPinBetween && !(lastIncomplete && nextIsInward)) return null
+    val drop = pickBestPostcodeInLineRange(lines, first, first + 2, minScore = 0)
+    val pickup = pickBestPostcodeInLineRange(lines, last, last + 2, minScore = 0)
+    if (pickup.isBlank() || drop.isBlank() || pickup == drop) return null
+    return pickup to drop
+}
+
+internal fun lineLooksLikeMapPoiBetweenAddresses(line: String): Boolean {
+    val t = line.trim()
+    if (t.length !in 3..28) return false
+    if (lineLooksLikeMapRoadChrome(t) || lineLooksLikeMotorwayMapLabel(t)) return true
+    if (parseTripLegFromLine(t) != null) return false
+    if (t.equals("Match", ignoreCase = true) || t.equals("Confirm", ignoreCase = true)) return false
+    if (t.contains("holiday", ignoreCase = true) || t.contains("Verified", ignoreCase = true)) {
+        return false
+    }
+    if (extractOuterLondonPostcodes(t).isNotEmpty()) return false
+    if (t.any { it.isDigit() }) return false
+    if (Regex(
+            """\b(Street|Road|Rd|St|Dr|Lane|Way|Avenue|Ave|Close|Cl|Station|Hotel|Hospital|Pickup|Pick-up|Confirm|Match)\b""",
+            RegexOption.IGNORE_CASE,
+        ).containsMatchIn(t)
+    ) {
+        return false
+    }
+    return true
 }
 
 /**

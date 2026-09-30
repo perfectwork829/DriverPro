@@ -1054,6 +1054,12 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
             return
         }
         if (lineLooksLikeMotorwayMapLabel(sourceLine)) return
+        if (lineLooksLikeMapRoadChrome(sourceLine)) return
+        if (prefix.equals("BA", ignoreCase = true) &&
+            sourceLine.contains("ROAD", ignoreCase = true)
+        ) {
+            return
+        }
         if (lineLooksLikeBareEastMapPostcode(sourceLine)) return
         // "NI" map label + next-line "lin" must not become N1 via a cross-line full-postcode match.
         if (lineLooksLikeBareMapDistrictLabel(sourceLine)) return
@@ -1138,6 +1144,12 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
         if (lineAlreadyHasStructuredPostcode(sourceLine)) return@forEach
         if (lineLooksLikeBareMapDistrictLabel(sourceLine)) return@forEach
         if (lineLooksLikeMotorwayMapLabel(sourceLine)) return@forEach
+        if (lineLooksLikeMapRoadChrome(sourceLine)) return@forEach
+        if (prefix.equals("BA", ignoreCase = true) &&
+            sourceLine.contains("ROAD", ignoreCase = true)
+        ) {
+            return@forEach
+        }
         if (lineLooksLikeBareEastMapPostcode(sourceLine)) return@forEach
         if (isInsideStationParentheses(sourceLine, match.range.first)) return@forEach
         if (isMotorwayDistrictOutwardToken(prefix, numberPart, sourceLine)) return@forEach
@@ -1306,8 +1318,14 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
     // Document order (pickup before drop on Match cards); dedupe keeps first sighting.
     // Prefer longer outwards: NW11 beats NW1, SE14 beats SE1 when both were OCR'd.
     val ordered = LinkedHashSet<String>()
-    foundByPosition.sortedBy { it.first }.forEach { (_, code) ->
+    foundByPosition.sortedBy { it.first }.forEach { (at, code) ->
         if (!isValidUkOutward(code)) return@forEach
+        val lineStart = text.lastIndexOf('\n', (at - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+        val lineEnd = text.indexOf('\n', at).let { if (it < 0) text.length else it }
+        val sourceLine = text.substring(lineStart, lineEnd)
+        if (lineLooksLikeMapRoadChrome(sourceLine) || lineLooksLikeMotorwayMapLabel(sourceLine)) {
+            return@forEach
+        }
         val shorter = ordered.filter { code.startsWith(it) && code.length > it.length }
         ordered.removeAll(shorter.toSet())
         if (ordered.none { it.startsWith(code) && it.length > code.length }) {
@@ -1604,7 +1622,11 @@ fun parseRideInfo(ocrTextRaw: String, visionText: Text? = null): RideRequest {
                 dropoffPostcode = retryDrop
             } else {
                 val ordered = extractOuterLondonPostcodes(ocrText)
-                if (ordered.size >= 2 && ordered[0] != ordered[1]) {
+                // UB7→UB7 (and N17→N17) is a real same-district trip. Map chrome such as
+                // BATH ROAD → BA4 must not replace the address-backed pair.
+                if (ordered.size >= 2 && ordered[0] != ordered[1] &&
+                    (pickupPostcode.isBlank() || ordered[0] == pickupPostcode)
+                ) {
                     pickupPostcode = ordered[0]
                     dropoffPostcode = ordered[1]
                 }
@@ -1637,8 +1659,16 @@ fun parseRideInfo(ocrTextRaw: String, visionText: Text? = null): RideRequest {
     ) {
         val ordered = extractOuterLondonPostcodes(ocrText).distinct()
         if (ordered.size >= 2) {
-            pickupPostcode = ordered[0]
-            dropoffPostcode = ordered[1]
+            // Same-district from both leg zones (UB7→UB7) is valid. Do not replace
+            // with an earlier map token. Wrong duplicates (SE20/SE20 when BR1 is pickup)
+            // still take document order.
+            val trueSameDistrict = zonePostcodes.first.isNotBlank() &&
+                zonePostcodes.first == zonePostcodes.second &&
+                pickupPostcode == zonePostcodes.first
+            if (!trueSameDistrict || ordered[0] == pickupPostcode) {
+                pickupPostcode = ordered[0]
+                dropoffPostcode = ordered[1]
+            }
         }
     }
     // Uber omitted pickup postcode — do not borrow drop outward onto pickup.
