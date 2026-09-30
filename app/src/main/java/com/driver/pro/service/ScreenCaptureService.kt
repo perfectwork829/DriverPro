@@ -1829,7 +1829,6 @@ class ScreenCaptureService : Service() {
     private var lastRideRequest: RideRequest? = null
     private var sameRideIndex: Int = 0
     private val ocrStabilityGate = OcrStabilityGate(requiredMatches = 1)
-    private var lastReadingOfferToastAt: Long = 0L
     private var lastResultBannerKey: String = ""
     private var lastResultBannerAt: Long = 0L
     private var lastScreenHash: Int? = null
@@ -1967,7 +1966,7 @@ class ScreenCaptureService : Service() {
         val notification = Notification.Builder(this, channelId)
             .setContentTitle("Capturing screen")
             .setContentText("Entire-screen capture active — switch to Uber Driver")
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_stat_notify)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
             .setContentIntent(openApp)
@@ -2421,7 +2420,10 @@ class ScreenCaptureService : Service() {
                 when (val gate = ocrStabilityGate.record(ride)) {
                     is StabilityGateResult.Incomplete -> return@addOnSuccessListener
                     is StabilityGateResult.Waiting -> {
-                        reportReadingOffer(gate.consecutive, gate.required)
+                        Log.d(
+                            "MY-BROADCAST",
+                            "Reading offer (${gate.consecutive}/${gate.required})",
+                        )
                         return@addOnSuccessListener
                     }
                     StabilityGateResult.Ready -> Unit
@@ -2625,23 +2627,6 @@ class ScreenCaptureService : Service() {
         )
         saveNewRequest(applicationContext, "RIDE-REQUESTS", attempt)
         Log.d("MY-BROADCAST", "saved OCR debug attempt: $reason")
-    }
-
-    private fun reportReadingOffer(consecutive: Int, required: Int) {
-        val now = System.currentTimeMillis()
-        if (now - lastReadingOfferToastAt < 2500L) return
-        lastReadingOfferToastAt = now
-        val message = "Reading offer… ($consecutive/$required)"
-        Log.d("MY-BROADCAST", message)
-        applicationContext.sendBroadcast(
-            Intent("ACTION_CLICK_CONFIRM").apply {
-                putExtra("x", 0)
-                putExtra("y", 0)
-                putExtra("message", message)
-                putExtra("status", 0)
-                setPackage(applicationContext.packageName)
-            },
-        )
     }
 
     private fun broadcastResultBanner(ride: RideRequest, score: Int?, holdMs: Long = 3200L) {

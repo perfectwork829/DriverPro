@@ -441,6 +441,7 @@ open class DriverAppAccessibilityService : AccessibilityService() {
 
     private fun showOfferOverlay(message: String, holdMs: Long) {
         if (message.isBlank()) return
+        if (message.startsWith("Reading offer")) return
         val parts = parseLiveOfferOverlay(message)
         if (parts != null) {
             showResultBanner(parts, holdMs)
