@@ -27,6 +27,7 @@ import android.widget.TextView
 import android.widget.Toast
 import android.graphics.Rect
 import android.graphics.Typeface
+import android.util.TypedValue
 import android.view.accessibility.AccessibilityNodeInfo
 import com.driver.pro.utils.LiveOfferOverlayParts
 import com.driver.pro.utils.parseLiveOfferOverlay
@@ -518,7 +519,8 @@ open class DriverAppAccessibilityService : AccessibilityService() {
                     gravity = Gravity.CENTER_VERTICAL
                     setPadding(dp(16), dp(8), dp(16), dp(8))
                     background = GradientDrawable().apply {
-                        setColor(Color.argb(215, 18, 18, 22))
+                        // Blue so the next-order result stays readable over Uber's black nav bar.
+                        setColor(Color.argb(240, 21, 101, 192))
                         cornerRadius = dp(14).toFloat()
                     }
                 }
@@ -530,6 +532,8 @@ open class DriverAppAccessibilityService : AccessibilityService() {
                         textSize = sizeSp
                         gravity = Gravity.CENTER
                         typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                        includeFontPadding = false
+                        maxLines = 1
                         layoutParams = LinearLayout.LayoutParams(
                             0,
                             LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -539,7 +543,16 @@ open class DriverAppAccessibilityService : AccessibilityService() {
                 }
 
                 row.addView(cell(parts.perHour.orEmpty(), 16f))
-                row.addView(cell(parts.score?.toString().orEmpty(), 42f, bold = true))
+                val scoreView = cell(parts.score?.toString().orEmpty(), 42f, bold = true).apply {
+                    layoutParams.height = dp(48)
+                    setAutoSizeTextTypeUniformWithConfiguration(
+                        22,
+                        42,
+                        1,
+                        TypedValue.COMPLEX_UNIT_SP,
+                    )
+                }
+                row.addView(scoreView)
                 row.addView(cell(parts.perMile.orEmpty(), 16f))
 
                 val params = WindowManager.LayoutParams(

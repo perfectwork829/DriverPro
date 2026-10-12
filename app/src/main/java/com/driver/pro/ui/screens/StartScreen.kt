@@ -105,5 +105,15 @@ fun StartScreen(
             },
         )
 
+        viewModel.loadError?.let { err ->
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = err,
+                fontSize = 16.sp,
+                color = Color(0xFFB00020),
+                textAlign = TextAlign.Center,
+            )
+        }
+
     }
 }

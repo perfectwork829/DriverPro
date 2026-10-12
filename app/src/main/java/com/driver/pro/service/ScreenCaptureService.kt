@@ -41,6 +41,7 @@ import com.driver.pro.network.rideRequestHttpBody
 import com.driver.pro.network.validateRideBeforeScoring
 import com.driver.pro.saveNewRequest
 import com.driver.pro.utils.formatLiveOfferOverlay
+import com.driver.pro.utils.promoteTruncatedRideScore
 import com.google.mlkit.vision.text.Text
 import kotlinx.coroutines.*
 import java.time.LocalTime
@@ -473,7 +474,25 @@ fun extractBestPrice(text: String): Double {
         return bareBest
     }
     if (bareBest >= 1.0) return bareBest
-    return maxOf(decimalBest, wholeBest)
+    val leftover = maxOf(decimalBest, wholeBest)
+    if (leftover >= 1.0) return leftover
+    return recoverFareFromHolidayEntitlement(text) ?: 0.0
+}
+
+/**
+ * When ML Kit drops the £ fare but keeps "£0.43 est. holiday entitlement", invert the
+ * usual ~9.09% UberX holiday line (0.43 → 4.73). Only for small holiday amounts so
+ * Comfort/Exec cards with a different ratio are not invented.
+ */
+internal fun recoverFareFromHolidayEntitlement(ocr: String): Double? {
+    val m = Regex(
+        """£\s*([0-9ilILO]+(?:[.,][0-9ilILO]{1,2})?)\s*est\.?\s*holiday""",
+        RegexOption.IGNORE_CASE,
+    ).find(ocr) ?: return null
+    val holiday = m.groupValues[1].replace(',', '.').fixOcrDigits().toDoubleOrNull() ?: return null
+    if (holiday !in 0.20..0.70) return null
+    val fare = kotlin.math.round(holiday / 0.0909 * 100.0) / 100.0
+    return fare.takeIf { it in 3.0..8.0 && it !in 4.95..5.05 }
 }
 
 fun extractDistance(text: String): List<String> {
@@ -1017,7 +1036,7 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
 
     // Driver app Match/Confirm often show truncated inward: "MK10 7" / "CR7 7".
     val truncatedInwardRegex = Regex(
-        """\b([A-Za-z]{1,2})($districtPart)\s+($inwardDigit)(?![A-Za-z0-9])""",
+        """\b([A-Za-z]{1,2})($districtPart)\s+($inwardDigit)([A-Za-z]?)(?![A-Za-z0-9])""",
         RegexOption.IGNORE_CASE,
     )
     // Same when Uber/OCR jams the remaining digit: "SW156" / "W148".
@@ -1063,6 +1082,15 @@ fun extractOuterLondonPostcodes(text: String): List<String> {
         if (lineLooksLikeBareEastMapPostcode(sourceLine)) return
         // "NI" map label + next-line "lin" must not become N1 via a cross-line full-postcode match.
         if (lineLooksLikeBareMapDistrictLabel(sourceLine)) return
+        // Bare "LA21 4" / "LA214" map fragments (Lancaster) on London cards.
+        if (
+            prefix.uppercase() !in LONDON_OCR_AREA_PREFIXES &&
+            !sourceLine.contains("London", ignoreCase = true) &&
+            !sourceLine.contains(',') &&
+            sourceLine.trim().length <= 12
+        ) {
+            return
+        }
         val codes = mutableListOf<String>()
         outwardFromDistrictParts(prefix, districtRaw, sourceLine)?.let { codes.add(it) }
         // Only for outward-only OCR tokens: "W7" may be missing S. Full "W8 4SG" must stay W8.
@@ -1412,6 +1440,9 @@ fun parseRideInfo(ocrTextRaw: String, visionText: Text? = null): RideRequest {
         }
     }
 
+    if (priceReal < 1.0) {
+        recoverFareFromHolidayEntitlement(ocrText)?.let { priceReal = it }
+    }
     if (priceReal < 1.0) {
         accuracy = 50
     } else if (extractPrice(ocrText).isEmpty() && structured?.price == null) {
@@ -2440,7 +2471,16 @@ class ScreenCaptureService : Service() {
                 ride.raw_text = updatedText
                 ride.ocr_image_uri = imageUri?.toString().orEmpty()
 
-                val jsonPayload = rideRequestHttpBody(ride)
+                val scoringRide = ride.copy(
+                    pickup_distance_value = ride.pickup_distance_value?.let {
+                        kotlin.math.round(it * 10.0) / 10.0
+                    },
+                    trip_distance_value = ride.trip_distance_value?.let {
+                        kotlin.math.round(it * 10.0) / 10.0
+                    },
+                    raw_text = rewriteOcrMilesToParsed(updatedText, ride),
+                )
+                val jsonPayload = rideRequestHttpBody(scoringRide)
                 logRideRequestPayload(ride, jsonPayload)
                 CoroutineScope(Dispatchers.IO).launch {
 
@@ -2463,52 +2503,59 @@ class ScreenCaptureService : Service() {
                             raw_text = ride.raw_text,
                             ocr_image_uri = ride.ocr_image_uri,
                             accuracy = ride.accuracy,
+                            price = ride.price,
+                            pickup_time_minutes = ride.pickup_time_minutes,
+                            pickup_distance_value = ride.pickup_distance_value,
+                            trip_time_minutes = ride.trip_time_minutes,
+                            trip_distance_value = ride.trip_distance_value,
                         )
-                        val score = scored.final_score
+                        val score = promoteTruncatedRideScore(scored.final_score, ride)
+                            ?: scored.final_score
+                        val scoredForUi = scored.copy(final_score = score)
                         val scoreForTap = score ?: 0
-                        val scoreOverlay = formatLiveOfferOverlay(scored, score)
+                        val scoreOverlay = formatLiveOfferOverlay(scoredForUi, score)
 
-                        if (scored.acceptedOrRejected == 1) {
+                        if (scoredForUi.acceptedOrRejected == 1) {
                             val tapped = captureAndSendTap(
                                 result,
                                 acceptTapKeys,
                                 scoreForTap,
-                                scored.acceptedOrRejected,
+                                scoredForUi.acceptedOrRejected,
                                 scoreOverlay,
                             )
                             if (!tapped) {
                                 sendAccessibilityFallbackTap(
-                                    scored.acceptedOrRejected,
+                                    scoredForUi.acceptedOrRejected,
                                     scoreForTap,
-                                    formatLiveOfferOverlay(scored, score),
+                                    formatLiveOfferOverlay(scoredForUi, score),
                                 )
                             }
-                        } else if (scored.acceptedOrRejected == -1) {
+                        } else if (scoredForUi.acceptedOrRejected == -1) {
                             val tapped = captureAndSendDismiss(
                                 result,
                                 scoreForTap,
-                                scored.acceptedOrRejected,
+                                scoredForUi.acceptedOrRejected,
                                 scoreOverlay,
                             ) || captureAndSendTap(
                                 result,
                                 rejectTapKeys,
                                 scoreForTap,
-                                scored.acceptedOrRejected,
+                                scoredForUi.acceptedOrRejected,
                                 scoreOverlay,
                             )
                             if (!tapped) {
                                 sendAccessibilityFallbackTap(
-                                    scored.acceptedOrRejected,
+                                    scoredForUi.acceptedOrRejected,
                                     scoreForTap,
-                                    formatLiveOfferOverlay(scored, score),
+                                    formatLiveOfferOverlay(scoredForUi, score),
                                 )
                             }
                         } else {
-                            broadcastResultBanner(scored, score, holdMs = 3200L)
+                            broadcastResultBanner(scoredForUi, score, holdMs = 3200L)
                         }
 
-                        saveNewRequest(applicationContext, "RIDE-REQUESTS", scored)
-                        Log.d("MY-BROADCAST", "saved success:$scored")
+                        saveNewRequest(applicationContext, "RIDE-REQUESTS", scoredForUi)
+                        Log.d("MY-BROADCAST", "saved success:$scoredForUi")
                     }
                 }
                 } catch (e: Exception) {

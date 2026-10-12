@@ -1,6 +1,7 @@
 package com.driver.pro.network
 
 import com.driver.pro.RideRequest
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -113,6 +114,41 @@ class RideRequestApiTest {
     fun validateRidePlausibility_allowsLowFareNearRatingBand() {
         val lowFare = sampleRide().copy(price = 4.60, rating = 4.49)
         assertNull(validateRidePlausibility(lowFare))
+    }
+
+    @Test
+    fun readScoredRideScore_prefers_109_over_truncated_9() {
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"final_score":9,"score":109,"acceptedOrRejected":0}""",
+        ).jsonObject
+        assertEquals(109, readScoredRideScore(json))
+    }
+
+    @Test
+    fun readScoredRideScore_keeps_single_digit_when_that_is_all_the_server_sent() {
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"final_score":9}""",
+        ).jsonObject
+        assertEquals(9, readScoredRideScore(json))
+    }
+
+    @Test
+    fun readScoredRideScore_reads_110_from_parent_data_object() {
+        val ride = kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"final_score":10}""",
+        ).jsonObject
+        val data = kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"score":110,"ride_request":{"final_score":10}}""",
+        ).jsonObject
+        assertEquals(110, readScoredRideScore(ride, data))
+    }
+
+    @Test
+    fun readScoredRideScore_keeps_lux_scores_above_250() {
+        val json = kotlinx.serialization.json.Json.parseToJsonElement(
+            """{"final_score":50,"score":350}""",
+        ).jsonObject
+        assertEquals(350, readScoredRideScore(json))
     }
 
     private fun sampleRide() = RideRequest(

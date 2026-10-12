@@ -74,10 +74,33 @@ fun formatOfferEarningsLine(earnings: OfferEarnings): String? {
 fun formatOfferEarningsLine(ride: RideRequest): String? =
     formatOfferEarningsLine(computeOfferEarnings(ride))
 
+/** App does not cap the product score; this is only a sanity bound for OCR/JSON leftovers. */
+const val MAX_REPORTED_RIDE_SCORE = 999
+
 /**
- * Live banner: £/h on the left, score in the middle (no "Score" label), £/mi on the right.
- * Omit [score] when the job was not sent for a server score.
+ * Server sometimes stores 110 as 10, 109 as 9, and 150 as 50 (hundreds digit dropped).
+ * Restore it when the offer cannot plausibly be a sub-100 score.
  */
+fun promoteTruncatedRideScore(score: Int?, ride: RideRequest): Int? {
+    if (score == null) return null
+    if (score in 100..MAX_REPORTED_RIDE_SCORE) return score
+    if (score !in 1..99) return score
+    val e = computeOfferEarnings(ride)
+    val perHour = e.poundsPerHour ?: 0.0
+    val perMile = e.poundsPerMile ?: 0.0
+    val fare = ride.price
+    val tripMi = ride.trip_distance_value ?: 0.0
+    val tripMin = ride.trip_time_minutes ?: 0
+    // Short high-rate hops: 9/10 instead of 109/110.
+    if (score in 1..25 && perHour >= 45.0 && perMile >= 2.5) return 100 + score
+    // Lux / long high-fare: 50 instead of 150 (RH10→BN11 £34 / 32 mi).
+    if (score in 26..99 && fare >= 20.0 && (tripMi >= 12.0 || tripMin >= 25)) {
+        return 100 + score
+    }
+    return score
+}
+
+/** Live banner: £/h left, score in the middle (no label), £/mi right. */
 fun formatLiveOfferOverlay(ride: RideRequest, score: Int?): String {
     val earnings = computeOfferEarnings(ride)
     return listOfNotNull(
@@ -119,7 +142,10 @@ fun parseLiveOfferOverlay(message: String): LiveOfferOverlayParts? {
         .replace(hour.orEmpty(), " ")
         .replace(mile.orEmpty(), " ")
         .trim()
-    val score = Regex("""^\d{1,3}$""").find(withoutRates)?.value?.toIntOrNull()
+    val score = Regex("""\b(\d{1,4})\b""").findAll(withoutRates)
+        .mapNotNull { it.groupValues[1].toIntOrNull() }
+        .filter { it in 0..MAX_REPORTED_RIDE_SCORE }
+        .maxOrNull()
     if (hour == null && mile == null && score == null) return null
     return LiveOfferOverlayParts(hour, score, mile)
 }

@@ -12,6 +12,7 @@ class RideOcrClientBatchJuly21Test {
         // OCR often drops the last digit; full form may still appear nearby.
         assertEquals(4.71, upgradeTruncatedRating(4.7, "★ 4.7\n4.71"), 0.001)
         assertEquals(4.71, upgradeTruncatedRating(4.70, "fare\n★ 4.71"), 0.001)
+        assertEquals(5.00, upgradeTruncatedRating(5.00, "£5.03\n5.00"), 0.001)
 
         val text = """
             UberX

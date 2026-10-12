@@ -88,8 +88,34 @@ class OfferEarningsTest {
     }
 
     @Test
+    fun parse_live_overlay_keeps_three_digit_score() {
+        val parts = parseLiveOfferOverlay("£78.60/h   109   £10.29/mi")!!
+        assertEquals(109, parts.score)
+    }
+
+    @Test
     fun history_line_matches_overlay_rates() {
         val line = formatOfferEarningsLine(ride(6.43, 8, 13, 1.0, 1.9))
         assertEquals("£18.37/h  £2.22/mi", line)
+    }
+
+    @Test
+    fun promote_truncated_10_to_110_on_excellent_short_hop() {
+        assertEquals(110, promoteTruncatedRideScore(10, ride(14.83, 2, 7, 0.1, 0.9)))
+        assertEquals(110, promoteTruncatedRideScore(10, ride(15.71, 2, 11, 0.1, 2.8)))
+        assertEquals(109, promoteTruncatedRideScore(9, ride(14.41, 1, 10, 0.0, 1.4)))
+    }
+
+    @Test
+    fun promote_keeps_real_three_digit_and_mid_scores() {
+        assertEquals(110, promoteTruncatedRideScore(110, ride(29.80, 1, 26, 0.0, 8.0)))
+        assertEquals(40, promoteTruncatedRideScore(40, ride(14.83, 2, 7, 0.1, 0.9)))
+        assertEquals(10, promoteTruncatedRideScore(10, ride(4.73, 4, 5, 0.5, 0.9)))
+    }
+
+    @Test
+    fun promote_truncated_50_to_150_on_long_high_fare_lux() {
+        assertEquals(150, promoteTruncatedRideScore(50, ride(34.14, 8, 40, 2.3, 32.1)))
+        assertEquals(350, promoteTruncatedRideScore(350, ride(34.14, 8, 40, 2.3, 32.1)))
     }
 }

@@ -1,7 +1,13 @@
 package com.driver.pro.network
 
 import com.driver.pro.RideRequest
+import com.driver.pro.utils.MAX_REPORTED_RIDE_SCORE
 import com.google.gson.Gson
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 private val rideGson = Gson()
 
@@ -23,6 +29,33 @@ fun rideRequestToJson(ride: RideRequest): String = rideGson.toJson(ride)
  * (or paste the output of this function for a real ride).
  */
 fun rideRequestHttpBody(ride: RideRequest): String = rideGson.toJson(rideRequestToJson(ride))
+
+/**
+ * Server may send 109 as `score` / `total_score` while `final_score` is a truncated 9.
+ * Prefer a 100+ value when both exist. Lux scores may exceed 250.
+ */
+internal fun readScoredRideScore(vararg objs: JsonObject?): Int? {
+    fun readNum(obj: JsonObject, key: String): Int? {
+        val el = obj[key] ?: return null
+        val p = runCatching { el.jsonPrimitive }.getOrNull() ?: return null
+        p.intOrNull?.let { return it }
+        p.doubleOrNull?.let { return kotlin.math.round(it).toInt() }
+        return p.contentOrNull?.replace(',', '.')?.toDoubleOrNull()
+            ?.let { kotlin.math.round(it).toInt() }
+    }
+    fun from(obj: JsonObject): List<Int> {
+        val finalScore = readNum(obj, "final_score")
+        val others = listOf("score", "total_score", "finalScore").mapNotNull { readNum(obj, it) }
+        return listOfNotNull(finalScore) + others
+    }
+    val present = objs.filterNotNull()
+    if (present.isEmpty()) return null
+    val all = present.flatMap { from(it) }
+    val high = all.filter { it in 100..MAX_REPORTED_RIDE_SCORE }
+    if (high.isNotEmpty()) return high.maxOrNull()
+    return from(present.first()).firstOrNull()
+        ?: all.firstOrNull()?.takeIf { it in 0..MAX_REPORTED_RIDE_SCORE }
+}
 
 /** Log ride object + exact HTTP body sent to POST /api/ride-request/. */
 fun logRideRequestPayload(ride: RideRequest, httpBody: String) {

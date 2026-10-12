@@ -66,9 +66,9 @@ fun detectOfferCardTopPx(pixels: IntArray, width: Int, height: Int): Int {
     if (sheetHeight < (height * 0.28f).toInt()) return -1
     if (height - 1 - sheetBottom > (height * 0.08f).toInt()) return -1
 
-    val pad = (height * 0.03f).toInt().coerceIn(8, 36)
+    val pad = (height * 0.05f).toInt().coerceIn(12, 48)
     val top = (sheetTop - pad).coerceIn(
-        (height * 0.12f).toInt(),
+        (height * 0.08f).toInt(),
         (height * 0.55f).toInt(),
     )
     if (height - top < (height * 0.35f).toInt()) return -1

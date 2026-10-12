@@ -526,8 +526,14 @@ private suspend fun executeRideRequest(
 
         return try {
             val rideRequestObj = jsonLenient.decodeFromJsonElement<RideRequest>(rideRequestResponse)
-            Log.d("API Success", "Ride Request ID: ${rideRequestObj.id}")
-            Result.success(rideRequestObj)
+            val score = readScoredRideScore(rideRequestResponse, dataObj, jsonObj)
+            val scored = if (score != null && score != rideRequestObj.final_score) {
+                rideRequestObj.copy(final_score = score)
+            } else {
+                rideRequestObj
+            }
+            Log.d("API Success", "Ride Request ID: ${scored.id} score=${scored.final_score}")
+            Result.success(scored)
         } catch (e: Exception) {
             Log.e("API Error", "Ride request decode failed: ${e.message}")
             Result.failure(
@@ -853,7 +859,7 @@ interface ApiService {
     @POST("api/users/{userId}/price-per-mile/")
     suspend fun updatePricePerMile(
         @Path("userId") userId: Int,
-        @Body body: Map<String, String>
+        @Body body: Map<String, @JvmSuppressWildcards Any>
     )
 
     @POST("api/token/")
