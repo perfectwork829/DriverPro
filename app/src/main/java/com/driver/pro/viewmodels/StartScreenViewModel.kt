@@ -1,5 +1,6 @@
 package com.driver.pro.viewmodels
 
+import android.content.Context
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -9,14 +10,19 @@ import androidx.lifecycle.viewModelScope
 import com.driver.pro.network.ApiService
 import com.driver.pro.network.City
 import com.driver.pro.network.PricePerMileResponse
+import com.driver.pro.network.rowUsedForScoring
+import com.driver.pro.saveOperatingCostPerMile
+import com.driver.pro.getOperatingCostPerMile
 import com.driver.pro.utils.digitInputToApiPounds
 import com.driver.pro.utils.formatApiPriceToDigitInput
 import kotlin.math.abs
 import kotlinx.coroutines.launch
+import retrofit2.HttpException
 
 
 class StartScreenViewModel(
-    private val api: ApiService
+    private val api: ApiService,
+    private val appContext: Context,
 ) : ViewModel() {
 
     var cities by mutableStateOf<List<City>>(emptyList())
@@ -25,7 +31,7 @@ class StartScreenViewModel(
     var pricePerMile by mutableStateOf("")
     var loadError by mutableStateOf<String?>(null)
 
-    private var savedPriceRowId: Int? = null
+    private var scoringPriceRowId: Int? = null
 
     fun loadData(userId: Int) {
         viewModelScope.launch {
@@ -43,6 +49,9 @@ class StartScreenViewModel(
                 applySavedPrice(api.getPricePerMile(userId))
             } catch (e: Exception) {
                 Log.e(TAG, "Start screen load failed for user $userId", e)
+                pricePerMile = formatApiPriceToDigitInput(
+                    getOperatingCostPerMile(appContext).toString(),
+                )
                 loadError = e.message
             }
         }
@@ -70,44 +79,67 @@ class StartScreenViewModel(
     }
     fun updatePrice(userId: Int, digits: String) {
         val pounds = digitInputToApiPounds(digits)
+        saveOperatingCostPerMile(appContext, pounds)
+        pricePerMile = formatApiPriceToDigitInput(pounds.toString())
         viewModelScope.launch {
             try {
                 val body = linkedMapOf<String, Any>(
                     "user" to userId,
                     "price_per_mile" to pounds,
                 )
-                savedPriceRowId?.let { body["id"] = it }
-                api.updatePricePerMile(userId, body)
+                scoringPriceRowId?.let { body["id"] = it }
+                try {
+                    api.replacePricePerMile(userId, body)
+                } catch (e: HttpException) {
+                    if (e.code() !in setOf(404, 405, 501)) throw e
+                    api.updatePricePerMile(userId, body)
+                } catch (e: Exception) {
+                    api.updatePricePerMile(userId, body)
+                }
                 val rows = api.getPricePerMile(userId)
-                val saved = rows.maxByOrNull { it.id }
+                val saved = rows.rowUsedForScoring()
                 if (saved == null || abs(saved.price_per_mile - pounds) > 0.009) {
                     Log.e(
                         TAG,
-                        "price_per_mile POST did not stick: sent=$pounds got=${rows.map { it.price_per_mile }}",
+                        "price_per_mile did not stick on scoring row: sent=$pounds got=${rows.map { it.id to it.price_per_mile }}",
                     )
-                    loadError = "Cost per mile did not save. Please try again."
+                    loadError = "Cost saved on this phone. Server copy may still be £0.50 — please try again."
+                    applyLocalDigits(pounds)
                 } else {
                     loadError = null
                     applySavedPrice(rows)
-                    Log.d(TAG, "Saved price_per_mile=${saved.price_per_mile} id=${saved.id}")
+                    Log.d(TAG, "Saved price_per_mile=${saved.price_per_mile} scoringRowId=${saved.id}")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to save price_per_mile", e)
-                loadError = "Could not save cost per mile. Please try again."
+                applyLocalDigits(pounds)
+                loadError = "Cost saved on this phone. Could not update the server. Please try again."
             }
         }
     }
 
+    private fun applyLocalDigits(pounds: Double) {
+        pricePerMile = formatApiPriceToDigitInput(pounds.toString())
+    }
+
     private fun applySavedPrice(rows: List<PricePerMileResponse>) {
-        val latest = rows.maxByOrNull { it.id }
-        if (latest == null) {
-            savedPriceRowId = null
-            pricePerMile = ""
-            Log.w(TAG, "GET price-per-mile returned empty list")
+        val scoring = rows.rowUsedForScoring()
+        val local = getOperatingCostPerMile(appContext)
+        if (scoring == null) {
+            scoringPriceRowId = null
+            pricePerMile = formatApiPriceToDigitInput(local.toString())
+            Log.w(TAG, "GET price-per-mile returned empty list, using local=$local")
             return
         }
-        savedPriceRowId = latest.id
-        pricePerMile = formatApiPriceToDigitInput(latest.price_per_mile.toString())
-        Log.d(TAG, "Loaded price_per_mile api=${latest.price_per_mile} display=$pricePerMile id=${latest.id}")
+        scoringPriceRowId = scoring.id
+        val apiPrice = scoring.price_per_mile
+        // Prefer the value the driver just set locally if the scoring row is still the old 0.50.
+        val display = if (abs(local - apiPrice) > 0.009 && abs(apiPrice - 0.50) < 0.009 && local != 0.50) {
+            local
+        } else {
+            apiPrice
+        }
+        pricePerMile = formatApiPriceToDigitInput(display.toString())
+        Log.d(TAG, "Loaded price_per_mile scoring=$apiPrice local=$local display=$pricePerMile id=${scoring.id}")
     }
 }

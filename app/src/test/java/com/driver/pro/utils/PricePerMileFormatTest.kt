@@ -1,5 +1,7 @@
 package com.driver.pro.utils
 
+import com.driver.pro.network.PricePerMileResponse
+import com.driver.pro.network.rowUsedForScoring
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -29,5 +31,15 @@ class PricePerMileFormatTest {
         } finally {
             java.util.Locale.setDefault(previous)
         }
+    }
+
+    @Test
+    fun scoring_uses_oldest_server_row_not_a_newer_copy() {
+        val rows = listOf(
+            PricePerMileResponse(id = 10, user = 1, price_per_mile = 5.55),
+            PricePerMileResponse(id = 2, user = 1, price_per_mile = 0.50),
+        )
+        assertEquals(2, rows.rowUsedForScoring()!!.id)
+        assertEquals(0.50, rows.rowUsedForScoring()!!.price_per_mile, 0.001)
     }
 }

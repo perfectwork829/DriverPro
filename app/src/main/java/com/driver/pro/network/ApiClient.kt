@@ -862,6 +862,12 @@ interface ApiService {
         @Body body: Map<String, @JvmSuppressWildcards Any>
     )
 
+    @PUT("api/users/{userId}/price-per-mile/")
+    suspend fun replacePricePerMile(
+        @Path("userId") userId: Int,
+        @Body body: Map<String, @JvmSuppressWildcards Any>
+    )
+
     @POST("api/token/")
     suspend fun login(@Body body: Map<String, String>): TokenResponse
 
@@ -918,3 +924,7 @@ data class PricePerMileResponse(
     /** API may return JSON number (0.5) or string ("0.50"). */
     val price_per_mile: Double,
 )
+
+/** Scoring uses the oldest row; newer POST rows were displayed but ignored. */
+fun List<PricePerMileResponse>.rowUsedForScoring(): PricePerMileResponse? =
+    minByOrNull { it.id }

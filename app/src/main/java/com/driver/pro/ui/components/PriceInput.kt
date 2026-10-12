@@ -163,7 +163,11 @@ fun PriceInput(
         modifier = Modifier
             .focusRequester(focusRequester)
             .onFocusChanged { state ->
+                val wasFocused = isFocused
                 isFocused = state.isFocused
+                if (wasFocused && !state.isFocused && digits.length == 3) {
+                    onValueChangeFinished(digits)
+                }
             },
         decorationBox = {
             Row(verticalAlignment = Alignment.CenterVertically) {

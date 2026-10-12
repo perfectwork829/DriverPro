@@ -63,4 +63,28 @@ class MergeRideHistoryTest {
         assertEquals(1, merged.size)
         assertEquals("local ocr", merged[0].raw_text)
     }
+
+    @Test
+    fun keepsLocalFullScoreWhenApiDropsHundredsDigit() {
+        val local = listOf(ride(id = 5204, price = 17.14, createdAt = "2026-10-12 14:06:10", score = 110))
+        val api = listOf(ride(id = 5204, price = 17.14, createdAt = "2026-10-12 14:06:10", score = 10))
+        val merged = mergeRideHistory(local, api)
+        assertEquals(1, merged.size)
+        assertEquals(110, merged[0].final_score)
+    }
+
+    @Test
+    fun keepsLocalFormulaScoreWhenApiReturnsRemainderOnLongJob() {
+        val local = listOf(ride(id = 5219, price = 25.11, createdAt = "2026-10-12 15:11:23", score = 18))
+        val api = listOf(ride(id = 5219, price = 25.11, createdAt = "2026-10-12 15:11:23", score = 44))
+        val merged = mergeRideHistory(local, api)
+        assertEquals(18, merged[0].final_score)
+    }
+
+    @Test
+    fun preferDisplayedScoreRestoresTruncatedApiWhenLocalIsRemainder() {
+        assertEquals(110, preferDisplayedScore(10, 110))
+        assertEquals(110, preferDisplayedScore(110, 10))
+        assertEquals(18, preferDisplayedScore(18, 44))
+    }
 }

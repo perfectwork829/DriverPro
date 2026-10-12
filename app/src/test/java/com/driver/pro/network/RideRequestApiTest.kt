@@ -21,6 +21,15 @@ class RideRequestApiTest {
     }
 
     @Test
+    fun rideRequestToJson_includes_operating_cost_per_mile() {
+        val json = rideRequestToJson(
+            sampleRide().copy(cost_per_mile = 0.55, price_per_mile = 0.55),
+        )
+        assertTrue(json.contains("\"cost_per_mile\":0.55"))
+        assertTrue(json.contains("\"price_per_mile\":0.55"))
+    }
+
+    @Test
     fun rideRequestHttpBody_isJsonEncodedString_forServer() {
         val body = rideRequestHttpBody(sampleRide())
         assertTrue(body.trimStart().startsWith("\""))

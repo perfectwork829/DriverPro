@@ -54,6 +54,27 @@ fun computeOfferEarnings(ride: RideRequest): OfferEarnings = computeOfferEarning
     tripMiles = ride.trip_distance_value,
 )
 
+/**
+ * Client formula without return-to-zone (A, B are not on the Uber card):
+ * [Y − (C + D) × cost] × 60 / (E + F)
+ * Result is net £/h, rounded. May be negative when mileage cost exceeds the fare.
+ */
+fun computeFormulaScore(ride: RideRequest, costPerMile: Double): Int? {
+    val fare = ride.price
+    val pickupMin = ride.pickup_time_minutes
+    val tripMin = ride.trip_time_minutes
+    val pickupMi = ride.pickup_distance_value
+    val tripMi = ride.trip_distance_value
+    if (fare < 1.0 || pickupMin == null || tripMin == null) return null
+    val minutes = pickupMin + tripMin
+    if (minutes <= 0) return null
+    val miles = (pickupMi ?: 0.0).coerceAtLeast(0.0) + (tripMi ?: 0.0).coerceAtLeast(0.0)
+    val net = fare - miles * costPerMile.coerceAtLeast(0.0)
+    val perHour = net * 60.0 / minutes
+    if (!perHour.isFinite()) return null
+    return kotlin.math.round(perHour).toInt()
+}
+
 fun formatPoundsRate(value: Double): String =
     "£${String.format(Locale.UK, "%.2f", value)}"
 

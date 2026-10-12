@@ -34,10 +34,35 @@ data class RideRequest(
     var type: String = "confirm",
     /** OCR confidence; older API rows may omit this — default keeps history JSON parsing working. */
     var accuracy: Int = 100,
+    /** Operating cost £/mile from the Start screen (formula 0.5). Sent on score so the server does not keep a stale 0.50. */
+    val cost_per_mile: Double? = null,
+    val price_per_mile: Double? = null,
 )
 
 private const val MAX_STORED_RIDES = 120
 private val rideListType = object : TypeToken<MutableList<RideRequest>>() {}.type
+
+private const val KEY_OPERATING_COST_PER_MILE = "OPERATING_COST_PER_MILE"
+const val DEFAULT_OPERATING_COST_PER_MILE = 0.50
+
+fun getOperatingCostPerMile(context: Context?): Double {
+    if (context == null) return DEFAULT_OPERATING_COST_PER_MILE
+    val raw = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        .getString(KEY_OPERATING_COST_PER_MILE, null)
+    val pounds = raw?.replace(',', '.')?.toDoubleOrNull()
+    return pounds?.takeIf { it in 0.0..9.99 } ?: DEFAULT_OPERATING_COST_PER_MILE
+}
+
+fun saveOperatingCostPerMile(context: Context?, pounds: Double) {
+    if (context == null) return
+    val clamped = pounds.coerceIn(0.0, 9.99)
+    context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit {
+        putString(
+            KEY_OPERATING_COST_PER_MILE,
+            java.lang.String.format(java.util.Locale.US, "%.2f", clamped),
+        )
+    }
+}
 
 fun getToken(context: Context, key: String): String? {
     val sharedPref: SharedPreferences = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
@@ -111,6 +136,15 @@ fun saveNewRequest(context: Context?, key: String, rideRequest: RideRequest): Bo
  * Local scored rides must stay visible even when the API returns older rows
  * (otherwise Clear History + non-empty API → empty History while scores still overlay).
  */
+/** Keep 110 when the server later returns 10 (hundreds digit dropped). Prefer the on-device score. */
+internal fun preferDisplayedScore(local: Int?, api: Int?): Int? {
+    if (local == null) return api
+    if (api == null) return local
+    if (local >= 100 && api in 0..99 && local % 100 == api) return local
+    if (api >= 100 && local in 0..99 && api % 100 == local) return api
+    return local
+}
+
 fun mergeRideHistory(local: List<RideRequest>, fromApi: List<RideRequest>): List<RideRequest> {
     fun key(r: RideRequest): String {
         if (r.id > 0) return "id:${r.id}"
@@ -131,6 +165,7 @@ fun mergeRideHistory(local: List<RideRequest>, fromApi: List<RideRequest>): List
                 raw_text = r.raw_text.ifBlank { existing.raw_text },
                 ocr_image_uri = r.ocr_image_uri.ifBlank { existing.ocr_image_uri },
                 created_at = r.created_at.ifBlank { existing.created_at },
+                final_score = preferDisplayedScore(existing.final_score, r.final_score),
             )
         }
     }

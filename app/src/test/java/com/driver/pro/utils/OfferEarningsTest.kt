@@ -118,4 +118,26 @@ class OfferEarningsTest {
         assertEquals(150, promoteTruncatedRideScore(50, ride(34.14, 8, 40, 2.3, 32.1)))
         assertEquals(350, promoteTruncatedRideScore(350, ride(34.14, 8, 40, 2.3, 32.1)))
     }
+
+    @Test
+    fun formula_score_changes_with_start_screen_cost() {
+        val masons = ride(17.14, 1, 13, 0.1, 2.6)
+        val atOnePence = computeFormulaScore(masons, 0.01)!!
+        val atThirtyPence = computeFormulaScore(masons, 0.30)!!
+        val atThreePounds = computeFormulaScore(masons, 3.00)!!
+        assertEquals(73, atOnePence)
+        assertEquals(70, atThirtyPence)
+        assertEquals(39, atThreePounds)
+        assertTrue(atOnePence > atThreePounds)
+    }
+
+    @Test
+    fun formula_score_on_long_job_uses_mileage_cost_not_truncated_144() {
+        val marsden = ride(25.11, 7, 52, 1.0, 13.2)
+        val atFiftyPence = computeFormulaScore(marsden, 0.50)!!
+        assertEquals(18, atFiftyPence)
+        assertTrue(atFiftyPence < 40)
+        assertEquals(25, computeFormulaScore(marsden, 0.01))
+        assertEquals(-18, computeFormulaScore(marsden, 3.00))
+    }
 }

@@ -35,11 +35,13 @@ import android.os.Environment
 import android.provider.MediaStore
 import com.driver.pro.RideRequest
 import com.driver.pro.getToken
+import com.driver.pro.getOperatingCostPerMile
 import com.driver.pro.network.calculateRideRequest
 import com.driver.pro.network.logRideRequestPayload
 import com.driver.pro.network.rideRequestHttpBody
 import com.driver.pro.network.validateRideBeforeScoring
 import com.driver.pro.saveNewRequest
+import com.driver.pro.utils.computeFormulaScore
 import com.driver.pro.utils.formatLiveOfferOverlay
 import com.driver.pro.utils.promoteTruncatedRideScore
 import com.google.mlkit.vision.text.Text
@@ -2471,6 +2473,7 @@ class ScreenCaptureService : Service() {
                 ride.raw_text = updatedText
                 ride.ocr_image_uri = imageUri?.toString().orEmpty()
 
+                val operatingCost = getOperatingCostPerMile(applicationContext)
                 val scoringRide = ride.copy(
                     pickup_distance_value = ride.pickup_distance_value?.let {
                         kotlin.math.round(it * 10.0) / 10.0
@@ -2479,6 +2482,8 @@ class ScreenCaptureService : Service() {
                         kotlin.math.round(it * 10.0) / 10.0
                     },
                     raw_text = rewriteOcrMilesToParsed(updatedText, ride),
+                    cost_per_mile = operatingCost,
+                    price_per_mile = operatingCost,
                 )
                 val jsonPayload = rideRequestHttpBody(scoringRide)
                 logRideRequestPayload(ride, jsonPayload)
@@ -2509,43 +2514,55 @@ class ScreenCaptureService : Service() {
                             trip_time_minutes = ride.trip_time_minutes,
                             trip_distance_value = ride.trip_distance_value,
                         )
-                        val score = promoteTruncatedRideScore(scored.final_score, ride)
-                            ?: scored.final_score
-                        val scoredForUi = scored.copy(final_score = score)
+                        val formulaScore = computeFormulaScore(ride, operatingCost)
+                        val restoredServer = promoteTruncatedRideScore(scored.final_score, ride)
+                        val score = formulaScore ?: restoredServer ?: scored.final_score
+                        val serverDecision = scored.acceptedOrRejected
+                        val decision = when {
+                            formulaScore != null && formulaScore < 0 -> -1
+                            serverDecision == 1 && formulaScore != null && formulaScore < 40 -> 0
+                            else -> serverDecision
+                        }
+                        val scoredForUi = scored.copy(
+                            final_score = score,
+                            acceptedOrRejected = decision,
+                            cost_per_mile = operatingCost,
+                            price_per_mile = operatingCost,
+                        )
                         val scoreForTap = score ?: 0
                         val scoreOverlay = formatLiveOfferOverlay(scoredForUi, score)
 
-                        if (scoredForUi.acceptedOrRejected == 1) {
+                        if (decision == 1) {
                             val tapped = captureAndSendTap(
                                 result,
                                 acceptTapKeys,
                                 scoreForTap,
-                                scoredForUi.acceptedOrRejected,
+                                decision,
                                 scoreOverlay,
                             )
                             if (!tapped) {
                                 sendAccessibilityFallbackTap(
-                                    scoredForUi.acceptedOrRejected,
+                                    decision,
                                     scoreForTap,
                                     formatLiveOfferOverlay(scoredForUi, score),
                                 )
                             }
-                        } else if (scoredForUi.acceptedOrRejected == -1) {
+                        } else if (decision == -1) {
                             val tapped = captureAndSendDismiss(
                                 result,
                                 scoreForTap,
-                                scoredForUi.acceptedOrRejected,
+                                decision,
                                 scoreOverlay,
                             ) || captureAndSendTap(
                                 result,
                                 rejectTapKeys,
                                 scoreForTap,
-                                scoredForUi.acceptedOrRejected,
+                                decision,
                                 scoreOverlay,
                             )
                             if (!tapped) {
                                 sendAccessibilityFallbackTap(
-                                    scoredForUi.acceptedOrRejected,
+                                    decision,
                                     scoreForTap,
                                     formatLiveOfferOverlay(scoredForUi, score),
                                 )

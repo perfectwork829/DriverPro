@@ -26,6 +26,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -42,8 +43,9 @@ fun StartScreen(
     api: ApiService
 ) {
 
+    val context = LocalContext.current
     val viewModel: StartScreenViewModel = viewModel(
-        factory = StartScreenViewModelFactory(api)
+        factory = StartScreenViewModelFactory(api, context.applicationContext)
     )
 
     val cities = viewModel.cities
@@ -103,6 +105,14 @@ fun StartScreen(
             onValueChangeFinished = { digits ->
                 viewModel.updatePrice(user.id, digits)
             },
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            "050 = £0.50   ·   055 = £0.55",
+            fontSize = 14.sp,
+            color = Color.Gray,
+            textAlign = TextAlign.Center,
         )
 
         viewModel.loadError?.let { err ->
