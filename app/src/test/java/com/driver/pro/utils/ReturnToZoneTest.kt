@@ -1,0 +1,43 @@
+package com.driver.pro.utils
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class ReturnToZoneTest {
+
+    @Test
+    fun tfl_london_includes_inner_and_outer() {
+        assertTrue(isTflLondonPostcode("SW1Y"))
+        assertTrue(isTflLondonPostcode("SE1"))
+        assertTrue(isTflLondonPostcode("TW13"))
+        assertTrue(isTflLondonPostcode("NW10"))
+        assertTrue(isTflLondonPostcode("KT1"))
+        assertFalse(isTflLondonPostcode("SN2"))
+        assertFalse(isTflLondonPostcode("BN11"))
+        assertFalse(isTflLondonPostcode("RH10"))
+        assertFalse(isTflLondonPostcode("OX4"))
+    }
+
+    @Test
+    fun outward_and_area_from_full_or_district() {
+        assertEquals("SW1Y", ukOutwardCode("SW1Y 6BU"))
+        assertEquals("SW", ukPostcodeArea("SW1Y 6BU"))
+        assertEquals("SN2", ukOutwardCode("SN2"))
+        assertEquals("SN", ukPostcodeArea("SN2 1AA"))
+    }
+
+    @Test
+    fun unknown_out_of_london_drop_uses_outbound_trip_as_return() {
+        val ret = resolveReturnToZone(
+            pickupPostcode = "E1",
+            dropoffPostcode = "ZZ9",
+            tripMiles = 40.0,
+            tripMinutes = 70,
+            table = emptyMap(),
+        )
+        assertEquals(40.0, ret.miles, 0.01)
+        assertEquals(70, ret.minutes)
+    }
+}

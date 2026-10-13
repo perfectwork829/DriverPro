@@ -55,12 +55,11 @@ fun computeOfferEarnings(ride: RideRequest): OfferEarnings = computeOfferEarning
 )
 
 /**
- * Client formula without return-to-zone (A, B are not on the Uber card):
- * [Y − (C + D) × cost] × 100 / (E + F)
+ * Client formula:
+ * [Y − (C + D + A) × cost] × 100 / (E + F + B)
  *
- * Same net as £/h (×60) but on the product score scale (×100). ×60 was showing
- * about 60% of the 110 / 44 scores the server used. May be negative when
- * mileage cost exceeds the fare.
+ * A/B are return-to-zone from [resolveReturnToZone] when pickup is TfL London
+ * and dropoff is outside. Intra-London stays A=0, B=0.
  */
 fun computeFormulaScore(ride: RideRequest, costPerMile: Double): Int? {
     val fare = ride.price
@@ -69,9 +68,12 @@ fun computeFormulaScore(ride: RideRequest, costPerMile: Double): Int? {
     val pickupMi = ride.pickup_distance_value
     val tripMi = ride.trip_distance_value
     if (fare < 1.0 || pickupMin == null || tripMin == null) return null
-    val minutes = pickupMin + tripMin
+    val ret = resolveReturnToZone(ride)
+    val minutes = pickupMin + tripMin + ret.minutes.coerceAtLeast(0)
     if (minutes <= 0) return null
-    val miles = (pickupMi ?: 0.0).coerceAtLeast(0.0) + (tripMi ?: 0.0).coerceAtLeast(0.0)
+    val miles = (pickupMi ?: 0.0).coerceAtLeast(0.0) +
+        (tripMi ?: 0.0).coerceAtLeast(0.0) +
+        ret.miles.coerceAtLeast(0.0)
     val net = fare - miles * costPerMile.coerceAtLeast(0.0)
     val score = net * 100.0 / minutes
     if (!score.isFinite()) return null

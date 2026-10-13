@@ -166,4 +166,37 @@ class OfferEarningsTest {
         assertEquals(score, parts.score)
         assertTrue((parts.score ?: 0) < 0)
     }
+
+    @Test
+    fun intra_london_job_does_not_add_return_to_zone() {
+        val masons = ride(17.14, 1, 13, 0.1, 2.6).copy(
+            pickup_address_postcode = "SW1Y",
+            dropoff_address_postcode = "SE1",
+        )
+        assertEquals(ReturnToZone.NONE, resolveReturnToZone(masons))
+        assertEquals(113, computeFormulaScore(masons, 0.50))
+    }
+
+    @Test
+    fun london_to_sn2_adds_return_miles_and_minutes() {
+        val job = ride(85.0, 10, 100, 2.0, 78.0).copy(
+            pickup_address_postcode = "SW1",
+            dropoff_address_postcode = "SN2",
+        )
+        val ret = resolveReturnToZone(job)
+        assertEquals(82.0, ret.miles, 0.01)
+        assertEquals(110, ret.minutes)
+        assertEquals(2, computeFormulaScore(job, 0.50))
+        val sameTripInsideLondon = job.copy(dropoff_address_postcode = "SE1")
+        assertTrue(computeFormulaScore(sameTripInsideLondon, 0.50)!! > 30)
+    }
+
+    @Test
+    fun pickup_outside_london_does_not_add_return() {
+        val job = ride(85.0, 10, 100, 2.0, 78.0).copy(
+            pickup_address_postcode = "SN2",
+            dropoff_address_postcode = "SW1",
+        )
+        assertEquals(ReturnToZone.NONE, resolveReturnToZone(job))
+    }
 }
