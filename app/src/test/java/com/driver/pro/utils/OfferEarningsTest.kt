@@ -94,6 +94,14 @@ class OfferEarningsTest {
     }
 
     @Test
+    fun parse_live_overlay_keeps_negative_score() {
+        val parts = parseLiveOfferOverlay("£59.56/h   -12   £5.01/mi")!!
+        assertEquals(-12, parts.score)
+        assertEquals("£59.56/h", parts.perHour)
+        assertEquals("£5.01/mi", parts.perMile)
+    }
+
+    @Test
     fun history_line_matches_overlay_rates() {
         val line = formatOfferEarningsLine(ride(6.43, 8, 13, 1.0, 1.9))
         assertEquals("£18.37/h  £2.22/mi", line)
@@ -124,20 +132,35 @@ class OfferEarningsTest {
         val masons = ride(17.14, 1, 13, 0.1, 2.6)
         val atOnePence = computeFormulaScore(masons, 0.01)!!
         val atThirtyPence = computeFormulaScore(masons, 0.30)!!
-        val atThreePounds = computeFormulaScore(masons, 3.00)!!
-        assertEquals(73, atOnePence)
-        assertEquals(70, atThirtyPence)
-        assertEquals(39, atThreePounds)
-        assertTrue(atOnePence > atThreePounds)
+        val atEightyPence = computeFormulaScore(masons, 0.80)!!
+        val atFourPounds = computeFormulaScore(masons, 4.00)!!
+        val atSixPounds = computeFormulaScore(masons, 6.00)!!
+        assertEquals(122, atOnePence)
+        assertEquals(117, atThirtyPence)
+        assertEquals(107, atEightyPence)
+        assertEquals(45, atFourPounds)
+        assertEquals(7, atSixPounds)
+        assertTrue(atOnePence > atSixPounds)
     }
 
     @Test
     fun formula_score_on_long_job_uses_mileage_cost_not_truncated_144() {
         val marsden = ride(25.11, 7, 52, 1.0, 13.2)
         val atFiftyPence = computeFormulaScore(marsden, 0.50)!!
-        assertEquals(18, atFiftyPence)
-        assertTrue(atFiftyPence < 40)
-        assertEquals(25, computeFormulaScore(marsden, 0.01))
-        assertEquals(-18, computeFormulaScore(marsden, 3.00))
+        assertEquals(31, atFiftyPence)
+        assertTrue(atFiftyPence < 70)
+        assertEquals(42, computeFormulaScore(marsden, 0.01))
+        assertEquals(-30, computeFormulaScore(marsden, 3.00))
+    }
+
+    @Test
+    fun formula_score_goes_negative_when_mileage_cost_exceeds_fare() {
+        val job = ride(21.87, 7, 15, 1.0, 3.4)
+        val score = computeFormulaScore(job, 6.00)!!
+        assertTrue(score < 0)
+        val overlay = formatLiveOfferOverlay(job, score)
+        val parts = parseLiveOfferOverlay(overlay)!!
+        assertEquals(score, parts.score)
+        assertTrue((parts.score ?: 0) < 0)
     }
 }

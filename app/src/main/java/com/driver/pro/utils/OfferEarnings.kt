@@ -56,8 +56,11 @@ fun computeOfferEarnings(ride: RideRequest): OfferEarnings = computeOfferEarning
 
 /**
  * Client formula without return-to-zone (A, B are not on the Uber card):
- * [Y − (C + D) × cost] × 60 / (E + F)
- * Result is net £/h, rounded. May be negative when mileage cost exceeds the fare.
+ * [Y − (C + D) × cost] × 100 / (E + F)
+ *
+ * Same net as £/h (×60) but on the product score scale (×100). ×60 was showing
+ * about 60% of the 110 / 44 scores the server used. May be negative when
+ * mileage cost exceeds the fare.
  */
 fun computeFormulaScore(ride: RideRequest, costPerMile: Double): Int? {
     val fare = ride.price
@@ -70,9 +73,9 @@ fun computeFormulaScore(ride: RideRequest, costPerMile: Double): Int? {
     if (minutes <= 0) return null
     val miles = (pickupMi ?: 0.0).coerceAtLeast(0.0) + (tripMi ?: 0.0).coerceAtLeast(0.0)
     val net = fare - miles * costPerMile.coerceAtLeast(0.0)
-    val perHour = net * 60.0 / minutes
-    if (!perHour.isFinite()) return null
-    return kotlin.math.round(perHour).toInt()
+    val score = net * 100.0 / minutes
+    if (!score.isFinite()) return null
+    return kotlin.math.round(score).toInt()
 }
 
 fun formatPoundsRate(value: Double): String =
@@ -163,10 +166,12 @@ fun parseLiveOfferOverlay(message: String): LiveOfferOverlayParts? {
         .replace(hour.orEmpty(), " ")
         .replace(mile.orEmpty(), " ")
         .trim()
-    val score = Regex("""\b(\d{1,4})\b""").findAll(withoutRates)
-        .mapNotNull { it.groupValues[1].toIntOrNull() }
-        .filter { it in 0..MAX_REPORTED_RIDE_SCORE }
-        .maxOrNull()
+    val score = withoutRates
+        .split(Regex("""\s+"""))
+        .mapNotNull { token ->
+            token.toIntOrNull()?.takeIf { it in -MAX_REPORTED_RIDE_SCORE..MAX_REPORTED_RIDE_SCORE }
+        }
+        .singleOrNull()
     if (hour == null && mile == null && score == null) return null
     return LiveOfferOverlayParts(hour, score, mile)
 }

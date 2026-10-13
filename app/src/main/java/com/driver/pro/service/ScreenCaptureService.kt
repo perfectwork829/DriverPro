@@ -2520,7 +2520,7 @@ class ScreenCaptureService : Service() {
                         val serverDecision = scored.acceptedOrRejected
                         val decision = when {
                             formulaScore != null && formulaScore < 0 -> -1
-                            serverDecision == 1 && formulaScore != null && formulaScore < 40 -> 0
+                            serverDecision == 1 && formulaScore != null && formulaScore < 70 -> 0
                             else -> serverDecision
                         }
                         val scoredForUi = scored.copy(
