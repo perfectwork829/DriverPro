@@ -118,7 +118,8 @@ open class DriverAppAccessibilityService : AccessibilityService() {
                 if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
                     clickPositionWithShizuku(x, y)
                 } else {
-                    clickAt(x, y, score)
+                    // Reject must be one tap: three hits on the map pinch-zoom Uber ("enlarges the screen").
+                    clickAt(x, y, score, maxAttempts = if (status == -1) 1 else 3)
                 }
             } else if (status == 1 || status == -1) {
                 tryPerformDecisionTap(status, score)
@@ -514,10 +515,14 @@ open class DriverAppAccessibilityService : AccessibilityService() {
                 val density = resources.displayMetrics.density
                 fun dp(v: Int) = (v * density).toInt()
 
+                val bannerH = dp(52)
+                val bannerW = resources.displayMetrics.widthPixels - dp(24)
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(16), dp(8), dp(16), dp(8))
+                    setPadding(dp(12), dp(4), dp(12), dp(4))
+                    clipChildren = true
+                    clipToPadding = true
                     background = GradientDrawable().apply {
                         // Blue so the next-order result stays readable over Uber's black nav bar.
                         setColor(Color.argb(240, 21, 101, 192))
@@ -534,20 +539,18 @@ open class DriverAppAccessibilityService : AccessibilityService() {
                         typeface = if (bold) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
                         includeFontPadding = false
                         maxLines = 1
-                        layoutParams = LinearLayout.LayoutParams(
-                            0,
-                            LinearLayout.LayoutParams.WRAP_CONTENT,
-                            1f,
-                        )
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        layoutParams = LinearLayout.LayoutParams(0, bannerH - dp(8), 1f)
                     }
                 }
 
+                val scoreText = parts.score?.toString().orEmpty()
+                val scoreMaxSp = if (scoreText.startsWith("-")) 32 else 36
                 row.addView(cell(parts.perHour.orEmpty(), 16f))
-                val scoreView = cell(parts.score?.toString().orEmpty(), 42f, bold = true).apply {
-                    layoutParams.height = dp(48)
+                val scoreView = cell(scoreText, scoreMaxSp.toFloat(), bold = true).apply {
                     setAutoSizeTextTypeUniformWithConfiguration(
-                        22,
-                        42,
+                        16,
+                        scoreMaxSp,
                         1,
                         TypedValue.COMPLEX_UNIT_SP,
                     )
@@ -556,15 +559,15 @@ open class DriverAppAccessibilityService : AccessibilityService() {
                 row.addView(cell(parts.perMile.orEmpty(), 16f))
 
                 val params = WindowManager.LayoutParams(
-                    WindowManager.LayoutParams.MATCH_PARENT,
-                    WindowManager.LayoutParams.WRAP_CONTENT,
+                    bannerW,
+                    bannerH,
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                     else
                         WindowManager.LayoutParams.TYPE_PHONE,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                         WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                     PixelFormat.TRANSLUCENT,
                 ).apply {
                     gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
@@ -572,7 +575,6 @@ open class DriverAppAccessibilityService : AccessibilityService() {
                     val statusBarHeight =
                         if (statusBarId > 0) resources.getDimensionPixelSize(statusBarId) else dp(24)
                     y = statusBarHeight + dp(8)
-                    width = resources.displayMetrics.widthPixels - dp(24)
                 }
 
                 val wm = getSystemService(WINDOW_SERVICE) as WindowManager
@@ -601,16 +603,13 @@ open class DriverAppAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun clickAt(rawX: Int, rawY: Int, score: Int) {
+    private fun clickAt(rawX: Int, rawY: Int, score: Int, maxAttempts: Int = 3) {
         Handler(mainLooper).postDelayed({
-            performGestureTap(rawX, rawY, attempt = 1, score)
+            performGestureTap(rawX, rawY, attempt = 1, score, maxAttempts)
         }, 1000L) // delay lets UI finish animations 250
     }
 
-    private fun performGestureTap(x: Int, y: Int, attempt: Int, score: Int) {
-
-        val MAX_ATTEMPTS = 3
-
+    private fun performGestureTap(x: Int, y: Int, attempt: Int, score: Int, maxAttempts: Int = 3) {
         val path = Path().apply { moveTo(x.toFloat(), y.toFloat()) }
 
         val gesture = GestureDescription.Builder()
@@ -627,18 +626,18 @@ open class DriverAppAccessibilityService : AccessibilityService() {
         dispatchGesture(gesture, object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
                 super.onCompleted(gestureDescription)
-                if (attempt < MAX_ATTEMPTS) {
+                if (attempt < maxAttempts) {
                     Handler(mainLooper).postDelayed({
-                        performGestureTap(x, y, attempt + 1, score)
+                        performGestureTap(x, y, attempt + 1, score, maxAttempts)
                     }, 1000L)
                 }
             }
 
             override fun onCancelled(gestureDescription: GestureDescription?) {
                 super.onCancelled(gestureDescription)
-                if (attempt < MAX_ATTEMPTS) {
+                if (attempt < maxAttempts) {
                     Handler(mainLooper).postDelayed({
-                        performGestureTap(x, y, attempt + 1, score)
+                        performGestureTap(x, y, attempt + 1, score, maxAttempts)
                     }, 120)
                 }
             }

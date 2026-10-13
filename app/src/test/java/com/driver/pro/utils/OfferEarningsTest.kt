@@ -99,6 +99,9 @@ class OfferEarningsTest {
         assertEquals(-12, parts.score)
         assertEquals("£59.56/h", parts.perHour)
         assertEquals("£5.01/mi", parts.perMile)
+        val ride = ride(21.87, 7, 15, 1.0, 3.4)
+        val roundTrip = parseLiveOfferOverlay(formatLiveOfferOverlay(ride, -20))!!
+        assertEquals(-20, roundTrip.score)
     }
 
     @Test

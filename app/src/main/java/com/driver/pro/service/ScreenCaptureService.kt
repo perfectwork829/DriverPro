@@ -2519,7 +2519,8 @@ class ScreenCaptureService : Service() {
                         val score = formulaScore ?: restoredServer ?: scored.final_score
                         val serverDecision = scored.acceptedOrRejected
                         val decision = when {
-                            formulaScore != null && formulaScore < 0 -> -1
+                            // Negative: banner only. Auto-reject taps triple-fire and magnify Uber.
+                            formulaScore != null && formulaScore < 0 -> 0
                             serverDecision == 1 && formulaScore != null && formulaScore < 70 -> 0
                             else -> serverDecision
                         }

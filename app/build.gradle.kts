@@ -18,8 +18,8 @@ android {
         applicationId = "com.driver.pro"
         minSdk = 26
         targetSdk = 36
-        versionCode = 55
-        versionName = "1.55"
+        versionCode = 56
+        versionName = "1.56"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
