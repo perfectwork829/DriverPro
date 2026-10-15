@@ -22,6 +22,12 @@ class RideOcrParsingTest {
     @Test
     fun tripLeg_parses_one_hour_one_minute() {
         assertEquals(61, parseTripLegFromLine("1 hr 1 min (17.7 mi)")?.minutes)
+        val jammed = parseTripLegFromLine("lhr l min (18.3 mi)")
+        assertEquals(61, jammed?.minutes)
+        assertEquals(18.3, jammed?.miles ?: 0.0, 0.001)
+        val hour35 = parseTripLegFromLine("lhr 35 min (25.4 mi)")
+        assertEquals(95, hour35?.minutes)
+        assertEquals(25.4, hour35?.miles ?: 0.0, 0.001)
     }
 
     @Test

@@ -138,10 +138,10 @@ class OfferEarningsTest {
         val atEightyPence = computeFormulaScore(masons, 0.80)!!
         val atFourPounds = computeFormulaScore(masons, 4.00)!!
         val atSixPounds = computeFormulaScore(masons, 6.00)!!
-        assertEquals(122, atOnePence)
-        assertEquals(117, atThirtyPence)
-        assertEquals(107, atEightyPence)
-        assertEquals(45, atFourPounds)
+        assertEquals(125, atOnePence)
+        assertEquals(120, atThirtyPence)
+        assertEquals(110, atEightyPence)
+        assertEquals(46, atFourPounds)
         assertEquals(7, atSixPounds)
         assertTrue(atOnePence > atSixPounds)
     }
@@ -150,10 +150,10 @@ class OfferEarningsTest {
     fun formula_score_on_long_job_uses_mileage_cost_not_truncated_144() {
         val marsden = ride(25.11, 7, 52, 1.0, 13.2)
         val atFiftyPence = computeFormulaScore(marsden, 0.50)!!
-        assertEquals(31, atFiftyPence)
+        assertEquals(38, atFiftyPence)
         assertTrue(atFiftyPence < 70)
-        assertEquals(42, computeFormulaScore(marsden, 0.01))
-        assertEquals(-30, computeFormulaScore(marsden, 3.00))
+        assertEquals(52, computeFormulaScore(marsden, 0.01))
+        assertEquals(-37, computeFormulaScore(marsden, 3.00))
     }
 
     @Test
@@ -174,7 +174,7 @@ class OfferEarningsTest {
             dropoff_address_postcode = "SE1",
         )
         assertEquals(ReturnToZone.NONE, resolveReturnToZone(masons))
-        assertEquals(113, computeFormulaScore(masons, 0.50))
+        assertEquals(116, computeFormulaScore(masons, 0.50))
     }
 
     @Test
@@ -189,6 +189,46 @@ class OfferEarningsTest {
         assertEquals(2, computeFormulaScore(job, 0.50))
         val sameTripInsideLondon = job.copy(dropoff_address_postcode = "SE1")
         assertTrue(computeFormulaScore(sameTripInsideLondon, 0.50)!! > 30)
+    }
+
+    @Test
+    fun w1j_se1_uses_email_buffer_of_four_minutes() {
+        val job = ride(21.84, 4, 18, 0.6, 3.9).copy(
+            pickup_address_postcode = "W1J",
+            dropoff_address_postcode = "SE1",
+        )
+        assertEquals(99, computeFormulaScore(job, 0.50))
+    }
+
+    @Test
+    fun tw6_se15_heathrow_to_peckham_at_50p() {
+        val job = ride(45.43, 4, 95, 0.6, 25.4).copy(
+            pickup_address_postcode = "TW6",
+            dropoff_address_postcode = "SE15",
+        )
+        assertEquals(ReturnToZone.NONE, resolveReturnToZone(job))
+        assertEquals(42, computeFormulaScore(job, 0.50))
+    }
+
+    @Test
+    fun tw6_sw6_heathrow_to_fulham_at_50p() {
+        val job = ride(25.43, 4, 61, 0.6, 18.3).copy(
+            pickup_address_postcode = "TW6",
+            dropoff_address_postcode = "SW6",
+        )
+        assertEquals(ReturnToZone.NONE, resolveReturnToZone(job))
+        assertEquals(31, computeFormulaScore(job, 0.50))
+        assertEquals(47, computeFormulaScore(job, 0.05))
+    }
+
+    @Test
+    fun tw6_ub7_heathrow_hop_at_50p() {
+        val job = ride(12.98, 4, 14, 0.6, 3.1).copy(
+            pickup_address_postcode = "TW6",
+            dropoff_address_postcode = "UB7",
+        )
+        assertEquals(ReturnToZone.NONE, resolveReturnToZone(job))
+        assertEquals(67, computeFormulaScore(job, 0.50))
     }
 
     @Test

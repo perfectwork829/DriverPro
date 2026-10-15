@@ -47,6 +47,8 @@ fun ScoreRangeSlider(
     thumbColor: Color = Color.Black,
     onValueChange: ((Float, Float) -> Unit)? = null,
     onChangeFinished: () -> Unit,
+    /** Discrete step; 5 = every 5 points on the 0–150 score scale. */
+    valueStep: Float = 0f,
 ) {
     val thumbColors = SliderDefaults.colors(
         activeTrackColor = Color.Transparent,
@@ -105,7 +107,9 @@ fun ScoreRangeSlider(
                 value = initialStart..initialEnd,
                 onValueChange = {
                     if (enabled) {
-                        onValueChange?.invoke(it.start, it.endInclusive)
+                        val start = snapSliderValue(it.start, min, max, valueStep)
+                        val end = snapSliderValue(it.endInclusive, min, max, valueStep)
+                        onValueChange?.invoke(start, end)
                     }
                 },
                 onValueChangeFinished = {
@@ -114,7 +118,7 @@ fun ScoreRangeSlider(
                     }
                 },
                 valueRange = min..max,
-                steps = 0,
+                steps = sliderSteps(min, max, valueStep),
                 colors = thumbColors,
                 enabled = enabled,
                 modifier = Modifier.fillMaxSize(),
@@ -137,4 +141,16 @@ fun ScoreRangeSlider(
             Text("Accept > $unit ${initialEnd.roundToInt()}", fontSize = HEADER_FONT_SIZE)
         }
     }
+}
+
+internal fun snapSliderValue(value: Float, min: Float, max: Float, step: Float): Float {
+    if (step <= 0f) return value.coerceIn(min, max)
+    val snapped = min + ((value - min) / step).roundToInt() * step
+    return snapped.coerceIn(min, max)
+}
+
+internal fun sliderSteps(min: Float, max: Float, step: Float): Int {
+    if (step <= 0f) return 0
+    val intervals = ((max - min) / step).roundToInt()
+    return (intervals - 1).coerceAtLeast(0)
 }

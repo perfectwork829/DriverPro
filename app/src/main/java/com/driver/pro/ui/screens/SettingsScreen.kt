@@ -317,7 +317,8 @@ fun SettingsScreen(
             enabled = scoreEnabled,
             onEnabledChange = { scoreEnabled = it; updateSettings() },
             onValueChange = { start, end -> scoreReject = start; scoreAccept = end; },
-            onChangeFinished = {updateSettings()}
+            onChangeFinished = {updateSettings()},
+            valueStep = 5f,
         )
 
         // Price Slider

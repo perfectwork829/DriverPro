@@ -54,12 +54,20 @@ fun computeOfferEarnings(ride: RideRequest): OfferEarnings = computeOfferEarning
     tripMiles = ride.trip_distance_value,
 )
 
+/** Fixed overhead from the 05/02/2026 formula: (E + F + B + 4). */
+const val FORMULA_BUFFER_MINUTES = 4
+
 /**
- * Client formula:
- * [Y − (C + D + A) × cost] × 100 / (E + F + B)
+ * Maps net £/h onto the 0–150 score slider. 2.2 × £/h puts ~£68/h at 150.
+ * Email 05/02/2026 is ×60 / minutes; 60 × 2.2 = 132.
+ */
+const val FORMULA_SCORE_PER_POUND_PER_HOUR = 2.2
+private const val FORMULA_NUMERATOR = 60.0 * FORMULA_SCORE_PER_POUND_PER_HOUR
+
+/**
+ * [Y − (C + D + A) × cost] × 60 / (E + F + B + 4), then × 2.2 for the 0–150 scale.
  *
- * A/B are return-to-zone from [resolveReturnToZone] when pickup is TfL London
- * and dropoff is outside. Intra-London stays A=0, B=0.
+ * W1J→SE1 £21.84 @ £0.50 → 99–101; SW1Y→SE1 £17.14 @ £0.50 → 116.
  */
 fun computeFormulaScore(ride: RideRequest, costPerMile: Double): Int? {
     val fare = ride.price
@@ -69,13 +77,13 @@ fun computeFormulaScore(ride: RideRequest, costPerMile: Double): Int? {
     val tripMi = ride.trip_distance_value
     if (fare < 1.0 || pickupMin == null || tripMin == null) return null
     val ret = resolveReturnToZone(ride)
-    val minutes = pickupMin + tripMin + ret.minutes.coerceAtLeast(0)
+    val minutes = pickupMin + tripMin + ret.minutes.coerceAtLeast(0) + FORMULA_BUFFER_MINUTES
     if (minutes <= 0) return null
     val miles = (pickupMi ?: 0.0).coerceAtLeast(0.0) +
         (tripMi ?: 0.0).coerceAtLeast(0.0) +
         ret.miles.coerceAtLeast(0.0)
     val net = fare - miles * costPerMile.coerceAtLeast(0.0)
-    val score = net * 100.0 / minutes
+    val score = net * FORMULA_NUMERATOR / minutes
     if (!score.isFinite()) return null
     return kotlin.math.round(score).toInt()
 }
