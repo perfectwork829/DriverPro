@@ -166,6 +166,8 @@ fun mergeRideHistory(local: List<RideRequest>, fromApi: List<RideRequest>): List
                 ocr_image_uri = r.ocr_image_uri.ifBlank { existing.ocr_image_uri },
                 created_at = r.created_at.ifBlank { existing.created_at },
                 final_score = preferDisplayedScore(existing.final_score, r.final_score),
+                cost_per_mile = existing.cost_per_mile ?: r.cost_per_mile,
+                price_per_mile = existing.price_per_mile ?: r.price_per_mile,
             )
         }
     }

@@ -13,7 +13,7 @@ class Oct15W1jSe1BatchTest {
         fillMissingTripMetrics(text, parseRideInfo(text, null))
 
     @Test
-    fun piccadilly_w1j_to_se1_parses_and_scores_99_at_50p() {
+    fun piccadilly_w1j_to_se1_parses_and_scores_104_at_50p() {
         val text = """
             ILL
             2 Exec
@@ -42,12 +42,12 @@ class Oct15W1jSe1BatchTest {
         assertEquals("W1J", ride.pickup_address_postcode)
         assertEquals("SE1", ride.dropoff_address_postcode)
         assertEquals(ReturnToZone.NONE, resolveReturnToZone(ride))
-        assertEquals(99, computeFormulaScore(ride, 0.50))
-        assertEquals(111, computeFormulaScore(ride, 0.0))
+        assertEquals(104, computeFormulaScore(ride, 0.50))
+        assertEquals(116, computeFormulaScore(ride, 0.0))
     }
 
     @Test
-    fun masons_sw1y_to_se1_parses_and_scores_116_at_50p() {
+    fun masons_sw1y_to_se1_parses_and_scores_121_at_50p() {
         val text = """
             London
             2 ExecExclusive
@@ -71,11 +71,11 @@ class Oct15W1jSe1BatchTest {
         assertEquals("SW1Y", ride.pickup_address_postcode)
         assertEquals("SE1", ride.dropoff_address_postcode)
         assertEquals(ReturnToZone.NONE, resolveReturnToZone(ride))
-        assertEquals(116, computeFormulaScore(ride, 0.50))
+        assertEquals(121, computeFormulaScore(ride, 0.50))
     }
 
     @Test
-    fun heathrow_t5_tw6_to_ub7_parses_and_scores_67_at_50p() {
+    fun heathrow_t5_tw6_to_ub7_parses_and_scores_80_at_5p() {
         val text = """
             2 Electric Exclusive
             £12.98
@@ -100,11 +100,12 @@ class Oct15W1jSe1BatchTest {
         assertEquals("TW6", ride.pickup_address_postcode)
         assertEquals("UB7", ride.dropoff_address_postcode)
         assertEquals(ReturnToZone.NONE, resolveReturnToZone(ride))
-        assertEquals(67, computeFormulaScore(ride, 0.50))
+        assertEquals(70, computeFormulaScore(ride, 0.50))
+        assertEquals(80, computeFormulaScore(ride, 0.05))
     }
 
     @Test
-    fun heathrow_t5_tw6_to_sw6_parses_61_min_and_scores_31_at_50p() {
+    fun heathrow_t5_tw6_to_sw6_parses_61_min() {
         val text = """
             2 UberX Exclusive
             £25.43
@@ -127,28 +128,28 @@ class Oct15W1jSe1BatchTest {
         assertEquals("TW6", ride.pickup_address_postcode)
         assertEquals("SW6", ride.dropoff_address_postcode)
         assertEquals(ReturnToZone.NONE, resolveReturnToZone(ride))
-        assertEquals(31, computeFormulaScore(ride, 0.50))
-        assertEquals(47, computeFormulaScore(ride, 0.05))
+        assertEquals(32, computeFormulaScore(ride, 0.50))
+        assertEquals(49, computeFormulaScore(ride, 0.05))
     }
 
     @Test
     fun heathrow_t5_tw6_to_sw6_noisy_dump_still_sw6_not_ealing() {
         val text = """
-            2 UberX
-            Exclusive
-            /£25.43
+            2 UberX Exclusive
+            / £25.43
             5.00
             4 min (0.6 mi)
             £1.62 est. holiday entitlement included
             Row R. TW6 2FF
+            w.ELLS
+            lhr l min (18.3 mi)
             Ealing
             Terminal 5. Terminal Parking 5. Level 1.
-            lhr l min (18.3 mi)
             X
             Confirm
-            17 Jaeger House. London. SW6 2GF
+            17 Jaeger House. London. sW6 2GF
             es
-            F
+            E
         """.trimIndent()
         val ride = parse(text)
         assertEquals(25.43, ride.price, 0.01)
@@ -158,11 +159,11 @@ class Oct15W1jSe1BatchTest {
         assertEquals(18.3, ride.trip_distance_value!!, 0.05)
         assertEquals("TW6", ride.pickup_address_postcode)
         assertEquals("SW6", ride.dropoff_address_postcode)
-        assertEquals(47, computeFormulaScore(ride, 0.05))
+        assertEquals(49, computeFormulaScore(ride, 0.05))
     }
 
     @Test
-    fun heathrow_t5_tw6_to_se15_parses_95_min_and_scores_42_at_50p() {
+    fun heathrow_t5_tw6_to_se15_parses_95_min() {
         val text = """
             2 Comfort Electric Exclusive
             £45.43
@@ -185,6 +186,6 @@ class Oct15W1jSe1BatchTest {
         assertEquals("TW6", ride.pickup_address_postcode)
         assertEquals("SE15", ride.dropoff_address_postcode)
         assertEquals(ReturnToZone.NONE, resolveReturnToZone(ride))
-        assertEquals(42, computeFormulaScore(ride, 0.50))
+        assertEquals(43, computeFormulaScore(ride, 0.50))
     }
 }

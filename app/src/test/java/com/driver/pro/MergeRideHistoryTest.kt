@@ -82,6 +82,17 @@ class MergeRideHistoryTest {
     }
 
     @Test
+    fun keepsLocalOperatingCostWhenApiOmitsIt() {
+        val local = listOf(
+            ride(id = 5462, price = 12.98, createdAt = "2026-10-15 22:19:00", score = 80)
+                .copy(cost_per_mile = 0.05, price_per_mile = 0.05),
+        )
+        val api = listOf(ride(id = 5462, price = 12.98, createdAt = "2026-10-15 22:19:00", score = 80))
+        val merged = mergeRideHistory(local, api)
+        assertEquals(0.05, merged[0].cost_per_mile!!, 0.001)
+    }
+
+    @Test
     fun preferDisplayedScoreRestoresTruncatedApiWhenLocalIsRemainder() {
         assertEquals(110, preferDisplayedScore(10, 110))
         assertEquals(110, preferDisplayedScore(110, 10))

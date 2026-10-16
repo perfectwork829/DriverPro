@@ -58,16 +58,19 @@ fun computeOfferEarnings(ride: RideRequest): OfferEarnings = computeOfferEarning
 const val FORMULA_BUFFER_MINUTES = 4
 
 /**
- * Maps net £/h onto the 0–150 score slider. 2.2 × £/h puts ~£68/h at 150.
- * Email 05/02/2026 is ×60 / minutes; 60 × 2.2 = 132.
+ * Maps net £/h onto the 0–150 score slider. 2.3 × £/h puts ~£65/h at 150.
+ * Email 05/02/2026 is ×60 / minutes; 60 × 2.3 = 138.
+ * 16 Oct client: TW6→UB7 £12.98 @ £0.05 → 80.
  */
-const val FORMULA_SCORE_PER_POUND_PER_HOUR = 2.2
+const val FORMULA_SCORE_PER_POUND_PER_HOUR = 2.3
 private const val FORMULA_NUMERATOR = 60.0 * FORMULA_SCORE_PER_POUND_PER_HOUR
 
 /**
- * [Y − (C + D + A) × cost] × 60 / (E + F + B + 4), then × 2.2 for the 0–150 scale.
+ * [Y − (C + D) × cost] × 60 / (E + F + 4), then × 2.3 for the 0–150 scale.
  *
- * W1J→SE1 £21.84 @ £0.50 → 99–101; SW1Y→SE1 £17.14 @ £0.50 → 116.
+ * 16 Oct marks omit return A/B (TW6→UB7 @ £0.05 → 80, TW6→SG6 @ £0.05 → 82,
+ * TW6→RH6 @ £0.30 → 68 vs marked 71). Deadhead lookup stays in [resolveReturnToZone]
+ * for when the admin table is confirmed.
  */
 fun computeFormulaScore(ride: RideRequest, costPerMile: Double): Int? {
     val fare = ride.price
@@ -76,16 +79,31 @@ fun computeFormulaScore(ride: RideRequest, costPerMile: Double): Int? {
     val pickupMi = ride.pickup_distance_value
     val tripMi = ride.trip_distance_value
     if (fare < 1.0 || pickupMin == null || tripMin == null) return null
-    val ret = resolveReturnToZone(ride)
-    val minutes = pickupMin + tripMin + ret.minutes.coerceAtLeast(0) + FORMULA_BUFFER_MINUTES
+    val minutes = pickupMin + tripMin + FORMULA_BUFFER_MINUTES
     if (minutes <= 0) return null
     val miles = (pickupMi ?: 0.0).coerceAtLeast(0.0) +
-        (tripMi ?: 0.0).coerceAtLeast(0.0) +
-        ret.miles.coerceAtLeast(0.0)
+        (tripMi ?: 0.0).coerceAtLeast(0.0)
     val net = fare - miles * costPerMile.coerceAtLeast(0.0)
     val score = net * FORMULA_NUMERATOR / minutes
     if (!score.isFinite()) return null
     return kotlin.math.round(score).toInt()
+}
+
+/**
+ * History tape for the snapshot that produced [RideRequest.final_score].
+ * Uses the cost stored on the ride, not the Start screen's current value.
+ */
+fun formatFormulaBreakdown(ride: RideRequest): String? {
+    val cost = ride.cost_per_mile ?: ride.price_per_mile ?: return null
+    val pickupMin = ride.pickup_time_minutes ?: return null
+    val tripMin = ride.trip_time_minutes ?: return null
+    val minutes = pickupMin + tripMin + FORMULA_BUFFER_MINUTES
+    val miles = (ride.pickup_distance_value ?: 0.0).coerceAtLeast(0.0) +
+        (ride.trip_distance_value ?: 0.0).coerceAtLeast(0.0)
+    val score = computeFormulaScore(ride, cost) ?: return null
+    val costBit = "£${String.format(Locale.US, "%.2f", cost)}/mi"
+    val milesBit = String.format(Locale.US, "%.1f mi", miles)
+    return "$costBit · $milesBit · $minutes min → $score"
 }
 
 fun formatPoundsRate(value: Double): String =

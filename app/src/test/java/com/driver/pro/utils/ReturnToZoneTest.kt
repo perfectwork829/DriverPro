@@ -16,6 +16,7 @@ class ReturnToZoneTest {
         assertTrue(isTflLondonPostcode("KT1"))
         assertFalse(isTflLondonPostcode("SN2"))
         assertFalse(isTflLondonPostcode("BN11"))
+        assertFalse(isTflLondonPostcode("RH6"))
         assertFalse(isTflLondonPostcode("RH10"))
         assertFalse(isTflLondonPostcode("OX4"))
     }
@@ -39,5 +40,12 @@ class ReturnToZoneTest {
         )
         assertEquals(40.0, ret.miles, 0.01)
         assertEquals(70, ret.minutes)
+    }
+
+    @Test
+    fun rh6_uses_area_return_to_london() {
+        val ret = resolveReturnToZone("TW6", "RH6", 39.3, 51)
+        assertEquals(30.0, ret.miles, 0.01)
+        assertEquals(55, ret.minutes)
     }
 }

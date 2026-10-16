@@ -5,8 +5,8 @@ import com.driver.pro.RideRequest
 /**
  * Return-to-zone (A miles, B minutes) for a London-start job that drops outside TfL.
  *
- * Formula uses [Y − (C + D + A)×cost] × 100 / (E + F + B).
- * Intra-London drops stay A=0, B=0 so SW1→SE1 scores do not change.
+ * Lookup only: 16 Oct client scores use outbound C,D,E,F (no A/B).
+ * Intra-London drops stay A=0, B=0.
  * Pickup outside TfL London is not a London job — no return is added.
  *
  * Table is keyed by outward code (SN2) then area (SN). Missing rows fall back
