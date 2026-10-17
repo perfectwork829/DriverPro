@@ -30,7 +30,7 @@ class ReturnToZoneTest {
     }
 
     @Test
-    fun unknown_out_of_london_drop_uses_outbound_trip_as_return() {
+    fun unknown_drop_has_no_return_until_sheet_row_exists() {
         val ret = resolveReturnToZone(
             pickupPostcode = "E1",
             dropoffPostcode = "ZZ9",
@@ -38,14 +38,19 @@ class ReturnToZoneTest {
             tripMinutes = 70,
             table = emptyMap(),
         )
-        assertEquals(40.0, ret.miles, 0.01)
-        assertEquals(70, ret.minutes)
+        assertEquals(ReturnToZone.NONE, ret)
     }
 
     @Test
-    fun rh6_uses_area_return_to_london() {
+    fun rh6_has_no_return_until_sheet_row_exists() {
         val ret = resolveReturnToZone("TW6", "RH6", 39.3, 51)
-        assertEquals(30.0, ret.miles, 0.01)
-        assertEquals(55, ret.minutes)
+        assertEquals(ReturnToZone.NONE, ret)
+    }
+
+    @Test
+    fun sg6_return_is_zero_from_client_sheet() {
+        val ret = resolveReturnToZone("TW6", "SG6", 48.8, 74)
+        assertEquals(0.0, ret.miles, 0.001)
+        assertEquals(0, ret.minutes)
     }
 }

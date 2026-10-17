@@ -47,21 +47,21 @@ fun isTflLondonPostcode(raw: String?): Boolean {
 fun resolveReturnToZone(
     pickupPostcode: String?,
     dropoffPostcode: String?,
-    tripMiles: Double?,
-    tripMinutes: Int?,
-    table: Map<String, ReturnToZone> = DEFAULT_RETURN_TO_ZONE,
+    tripMiles: Double? = null,
+    tripMinutes: Int? = null,
+    table: Map<String, ReturnToZone> = emptyMap(),
 ): ReturnToZone {
     if (!isTflLondonPostcode(pickupPostcode)) return ReturnToZone.NONE
     if (dropoffPostcode.isNullOrBlank()) return ReturnToZone.NONE
-    if (isTflLondonPostcode(dropoffPostcode)) return ReturnToZone.NONE
+    val row = lookupPostcodeScoreRow(dropoffPostcode)
+    if (row != null) {
+        return ReturnToZone(row.returnMiles.coerceAtLeast(0.0), row.returnMinutes.coerceAtLeast(0))
+    }
     val outward = ukOutwardCode(dropoffPostcode)
     val area = ukPostcodeArea(dropoffPostcode)
     val fromTable = outward?.let { table[it] } ?: area?.let { table[it] }
     if (fromTable != null) return fromTable
-    return ReturnToZone(
-        miles = (tripMiles ?: 0.0).coerceAtLeast(0.0),
-        minutes = (tripMinutes ?: 0).coerceAtLeast(0),
-    )
+    return ReturnToZone.NONE
 }
 
 fun resolveReturnToZone(ride: RideRequest): ReturnToZone = resolveReturnToZone(

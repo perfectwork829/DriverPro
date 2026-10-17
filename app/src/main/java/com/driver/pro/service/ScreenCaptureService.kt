@@ -2514,7 +2514,11 @@ class ScreenCaptureService : Service() {
                             trip_time_minutes = ride.trip_time_minutes,
                             trip_distance_value = ride.trip_distance_value,
                         )
-                        val formulaScore = computeFormulaScore(ride, operatingCost)
+                        val scoredAt = java.time.LocalDateTime.now().format(
+                            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+                        )
+                        val rideForScore = ride.copy(created_at = scoredAt)
+                        val formulaScore = computeFormulaScore(rideForScore, operatingCost)
                         val restoredServer = promoteTruncatedRideScore(scored.final_score, ride)
                         val score = formulaScore ?: restoredServer ?: scored.final_score
                         val serverDecision = scored.acceptedOrRejected
@@ -2529,6 +2533,7 @@ class ScreenCaptureService : Service() {
                             acceptedOrRejected = decision,
                             cost_per_mile = operatingCost,
                             price_per_mile = operatingCost,
+                            created_at = scoredAt,
                         )
                         val scoreForTap = score ?: 0
                         val scoreOverlay = formatLiveOfferOverlay(scoredForUi, score)

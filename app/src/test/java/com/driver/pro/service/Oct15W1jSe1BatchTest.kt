@@ -42,8 +42,8 @@ class Oct15W1jSe1BatchTest {
         assertEquals("W1J", ride.pickup_address_postcode)
         assertEquals("SE1", ride.dropoff_address_postcode)
         assertEquals(ReturnToZone.NONE, resolveReturnToZone(ride))
-        assertEquals(104, computeFormulaScore(ride, 0.50))
-        assertEquals(116, computeFormulaScore(ride, 0.0))
+        assertEquals(101, computeFormulaScore(ride, 0.50))
+        assertEquals(111, computeFormulaScore(ride, 0.0))
     }
 
     @Test
@@ -71,7 +71,7 @@ class Oct15W1jSe1BatchTest {
         assertEquals("SW1Y", ride.pickup_address_postcode)
         assertEquals("SE1", ride.dropoff_address_postcode)
         assertEquals(ReturnToZone.NONE, resolveReturnToZone(ride))
-        assertEquals(121, computeFormulaScore(ride, 0.50))
+        assertEquals(116, computeFormulaScore(ride, 0.50))
     }
 
     @Test
@@ -100,7 +100,7 @@ class Oct15W1jSe1BatchTest {
         assertEquals("TW6", ride.pickup_address_postcode)
         assertEquals("UB7", ride.dropoff_address_postcode)
         assertEquals(ReturnToZone.NONE, resolveReturnToZone(ride))
-        assertEquals(70, computeFormulaScore(ride, 0.50))
+        assertEquals(71, computeFormulaScore(ride, 0.50))
         assertEquals(80, computeFormulaScore(ride, 0.05))
     }
 
@@ -128,8 +128,8 @@ class Oct15W1jSe1BatchTest {
         assertEquals("TW6", ride.pickup_address_postcode)
         assertEquals("SW6", ride.dropoff_address_postcode)
         assertEquals(ReturnToZone.NONE, resolveReturnToZone(ride))
-        assertEquals(32, computeFormulaScore(ride, 0.50))
-        assertEquals(49, computeFormulaScore(ride, 0.05))
+        assertEquals(38, computeFormulaScore(ride, 0.50))
+        assertEquals(53, computeFormulaScore(ride, 0.05))
     }
 
     @Test
@@ -159,7 +159,7 @@ class Oct15W1jSe1BatchTest {
         assertEquals(18.3, ride.trip_distance_value!!, 0.05)
         assertEquals("TW6", ride.pickup_address_postcode)
         assertEquals("SW6", ride.dropoff_address_postcode)
-        assertEquals(49, computeFormulaScore(ride, 0.05))
+        assertEquals(53, computeFormulaScore(ride, 0.05))
     }
 
     @Test
@@ -186,6 +186,6 @@ class Oct15W1jSe1BatchTest {
         assertEquals("TW6", ride.pickup_address_postcode)
         assertEquals("SE15", ride.dropoff_address_postcode)
         assertEquals(ReturnToZone.NONE, resolveReturnToZone(ride))
-        assertEquals(43, computeFormulaScore(ride, 0.50))
+        assertEquals(48, computeFormulaScore(ride, 0.50))
     }
 }
