@@ -59,6 +59,21 @@ class ScoreFormulaTest {
     }
 
     @Test
+    fun sg6_sheet_hours_match_x3_to_x24_screenshot() {
+        val row = lookupPostcodeScoreRow("SG6")!!
+        val byHour = mapOf(
+            3 to 4, 4 to 5, 5 to 3, 6 to 4, 7 to 5, 8 to 6, 9 to 5, 10 to 4,
+            11 to 3, 12 to 3, 13 to 3, 14 to 3, 15 to 3, 16 to 5, 17 to 5, 18 to 5,
+            19 to 6, 20 to 6, 21 to 6, 22 to 6, 23 to 6, 24 to 3,
+        )
+        byHour.forEach { (hour, points) ->
+            assertEquals("SG6 X$hour", points, row.pointsAtHour(hour))
+        }
+        assertEquals(0.0, row.returnMiles, 0.0)
+        assertEquals(0, row.returnMinutes)
+    }
+
+    @Test
     fun sg6_hour_22_is_six_and_return_is_zero() {
         val row = lookupPostcodeScoreRow("SG6 2AB")!!
         assertEquals(6, row.pointsAtHour(22))
@@ -94,5 +109,35 @@ class ScoreFormulaTest {
         assertEquals(49, displayedFormulaScore(stored))
         assertEquals(22, parseRideHour("2026-10-16 22:54:00"))
         assertEquals(22, parseRideHour("16 Oct 2026, 22:54"))
+    }
+
+    @Test
+    fun id_5471_history_fields_are_49() {
+        val card = RideRequest(
+            id = 5471,
+            price = 50.63,
+            rating = 4.83,
+            pickup_time_minutes = 3,
+            pickup_distance_value = 0.6,
+            pickup_address_postcode = "TW6",
+            trip_time_minutes = 74,
+            trip_distance_value = 48.8,
+            dropoff_address_postcode = "SG6",
+            start_time_window = null,
+            end_time_window = null,
+            acceptedOrRejected = 0,
+            final_score = 44,
+            created_at = "2026-10-16 22:54:00",
+            cost_per_mile = 0.50,
+            price_per_mile = 0.50,
+        )
+        assertEquals(0, resolveReturnToZone(card).minutes)
+        assertEquals(19.21, netPoundsPerHour(card, 0.50)!!, 0.005)
+        assertEquals(49, displayedFormulaScore(card))
+        assertEquals(49, computeFormulaScore(card, 0.50))
+        assertEquals(
+            "£0.50/mi  19.21/h  39+10 -6 +6 = 49",
+            formatFormulaBreakdown(card),
+        )
     }
 }
