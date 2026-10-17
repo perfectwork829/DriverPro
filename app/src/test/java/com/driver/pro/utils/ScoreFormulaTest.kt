@@ -83,4 +83,16 @@ class ScoreFormulaTest {
             formatFormulaBreakdown(job.copy(cost_per_mile = 0.50)),
         )
     }
+
+    @Test
+    fun history_card_with_old_stored_44_displays_49() {
+        val stored = ride(50.63, 3, 74, 0.6, 48.8).copy(
+            final_score = 44,
+            cost_per_mile = 0.50,
+            price_per_mile = 0.50,
+        )
+        assertEquals(49, displayedFormulaScore(stored))
+        assertEquals(22, parseRideHour("2026-10-16 22:54:00"))
+        assertEquals(22, parseRideHour("16 Oct 2026, 22:54"))
+    }
 }

@@ -91,9 +91,15 @@ fun ratingToPoints(rating: Double): Int = when {
 fun parseRideHour(createdAt: String?): Int? {
     val t = createdAt?.trim().orEmpty()
     if (t.isEmpty()) return null
-    val normalized = t.take(19).replace('T', ' ').replace('/', '-')
-    val hourToken = Regex("""\b(\d{2}):\d{2}""").find(normalized)?.groupValues?.get(1)
+    val normalized = t.replace('T', ' ').replace('/', '-')
+    val hourToken = Regex("""\b(\d{1,2}):\d{2}""").find(normalized)?.groupValues?.get(1)
     return hourToken?.toIntOrNull()?.takeIf { it in 0..23 }
+}
+
+/** Recompute from stored fare, miles, times, cost, rating, postcodes and created hour. */
+fun displayedFormulaScore(ride: RideRequest): Int? {
+    val cost = ride.cost_per_mile ?: ride.price_per_mile ?: return null
+    return computeClientFormulaScore(ride, cost)
 }
 
 fun netPoundsPerHour(ride: RideRequest, costPerMile: Double): Double? {

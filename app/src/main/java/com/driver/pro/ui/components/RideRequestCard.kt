@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.driver.pro.RideRequest
+import com.driver.pro.utils.displayedFormulaScore
 import com.driver.pro.utils.formatFormulaBreakdown
 import com.driver.pro.utils.formatOfferEarningsLine
 
@@ -111,7 +112,8 @@ fun RideRequestCard(rideRequest: RideRequest) {
             Spacer(modifier = Modifier.height(4.dp))
             Text("Drop: ${rideRequest.trip_time_minutes}(${formatHistoryMiles(rideRequest.trip_distance_value)})(${rideRequest.dropoff_address_postcode})", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
             Spacer(modifier = Modifier.height(4.dp))
-            Text("Score: ${rideRequest.final_score ?: "N/A"} - ${showResult(rideRequest.acceptedOrRejected)}", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
+            val shownScore = displayedFormulaScore(rideRequest) ?: rideRequest.final_score
+            Text("Score: ${shownScore ?: "N/A"} - ${showResult(rideRequest.acceptedOrRejected)}", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
             formatFormulaBreakdown(rideRequest)?.let { tape ->
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(tape, fontSize = 13.sp, style = MaterialTheme.typography.bodyMedium)

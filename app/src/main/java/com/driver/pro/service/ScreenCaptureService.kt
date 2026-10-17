@@ -2509,10 +2509,13 @@ class ScreenCaptureService : Service() {
                             ocr_image_uri = ride.ocr_image_uri,
                             accuracy = ride.accuracy,
                             price = ride.price,
+                            rating = ride.rating,
                             pickup_time_minutes = ride.pickup_time_minutes,
                             pickup_distance_value = ride.pickup_distance_value,
+                            pickup_address_postcode = ride.pickup_address_postcode,
                             trip_time_minutes = ride.trip_time_minutes,
                             trip_distance_value = ride.trip_distance_value,
+                            dropoff_address_postcode = ride.dropoff_address_postcode,
                         )
                         val scoredAt = java.time.LocalDateTime.now().format(
                             java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
