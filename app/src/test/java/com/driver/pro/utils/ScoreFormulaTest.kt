@@ -140,4 +140,61 @@ class ScoreFormulaTest {
             formatFormulaBreakdown(card),
         )
     }
+
+    @Test
+    fun id_5484_tw6_sg6_at_2054_applies_cancelling_hour_points() {
+        val card = ride(50.63, 3, 74, 0.6, 48.8).copy(
+            id = 5484,
+            cost_per_mile = 0.35,
+            price_per_mile = 0.35,
+            created_at = "17 Oct 2026, 20:54",
+        )
+        assertEquals(20, parseRideHour(card.created_at))
+        assertEquals(6 to 6, postcodeHourAdjustment(card))
+        assertEquals(24.70, netPoundsPerHour(card, 0.35)!!, 0.005)
+        assertEquals(60, displayedFormulaScore(card))
+        assertEquals(
+            "£0.35/mi  24.70/h  50+10 -6 +6 = 60",
+            formatFormulaBreakdown(card),
+        )
+    }
+
+    @Test
+    fun id_5495_w6_tw13_is_50_not_51() {
+        val card = RideRequest(
+            id = 5495,
+            price = 19.56,
+            rating = 4.91,
+            pickup_time_minutes = 8,
+            pickup_distance_value = 1.5,
+            pickup_address_postcode = "W6",
+            trip_time_minutes = 30,
+            trip_distance_value = 13.8,
+            dropoff_address_postcode = "TW13",
+            start_time_window = null,
+            end_time_window = null,
+            acceptedOrRejected = 0,
+            final_score = 51,
+            created_at = "17 Oct 2026, 21:24",
+            cost_per_mile = 0.35,
+            price_per_mile = 0.35,
+        )
+        assertEquals(21, parseRideHour(card.created_at))
+        assertEquals(7, lookupPostcodeScoreRow("W6")!!.pointsAtHour(21))
+        assertEquals(6, lookupPostcodeScoreRow("TW13")!!.pointsAtHour(21))
+        assertEquals(7 to 6, postcodeHourAdjustment(card))
+        assertEquals(20.29, netPoundsPerHour(card, 0.35)!!, 0.005)
+        assertEquals(50, displayedFormulaScore(card))
+        assertEquals(
+            "£0.35/mi  20.29/h  41+10 -7 +6 = 50",
+            formatFormulaBreakdown(card),
+        )
+    }
+
+    @Test
+    fun known_pickup_hour_is_not_dropped_when_drop_hour_is_missing() {
+        val job = ride(50.63, 3, 74, 0.6, 48.8, pickupPc = "TW6", dropPc = "SE15")
+        assertEquals(6 to 0, postcodeHourAdjustment(job))
+        assertEquals(43, computeFormulaScore(job, 0.50))
+    }
 }

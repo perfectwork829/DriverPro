@@ -44,9 +44,25 @@ private fun hours(vararg fromHour3: Int): IntArray {
     return out
 }
 
+/** Known hour cells when the full X3–X24 row is not on the sheet yet. */
+private fun sparseHours(vararg hourToPoints: Pair<Int, Int>): IntArray {
+    val out = IntArray(25) { UNKNOWN_HOUR_POINTS }
+    for ((hour, pts) in hourToPoints) {
+        when (hour) {
+            0, 24 -> {
+                out[24] = pts
+                out[0] = pts
+            }
+            in 1..23 -> out[hour] = pts
+        }
+    }
+    return out
+}
+
 /**
  * Outward-code rows from the client sheet. SG6 is the 17 Oct screenshot
- * (X3..X24 then A=0 B=0). TW6 hour 22 is 6 on that same job.
+ * (X3..X24 then A=0 B=0). TW6 / W6 / TW13 cells are the hours the client
+ * confirmed on 17–18 Oct (pickup subtracted, drop added).
  */
 val POSTCODE_SCORE_TABLE: Map<String, PostcodeScoreRow> = mapOf(
     "SG6" to PostcodeScoreRow(
@@ -55,7 +71,17 @@ val POSTCODE_SCORE_TABLE: Map<String, PostcodeScoreRow> = mapOf(
         returnMinutes = 0,
     ),
     "TW6" to PostcodeScoreRow(
-        hourPoints = IntArray(25) { UNKNOWN_HOUR_POINTS }.also { it[22] = 6 },
+        hourPoints = sparseHours(20 to 6, 22 to 6),
+        returnMiles = 0.0,
+        returnMinutes = 0,
+    ),
+    "W6" to PostcodeScoreRow(
+        hourPoints = sparseHours(21 to 7),
+        returnMiles = 0.0,
+        returnMinutes = 0,
+    ),
+    "TW13" to PostcodeScoreRow(
+        hourPoints = sparseHours(21 to 6),
         returnMiles = 0.0,
         returnMinutes = 0,
     ),
@@ -119,14 +145,13 @@ fun netPoundsPerHour(ride: RideRequest, costPerMile: Double): Double? {
 }
 
 /**
- * Pickup points are subtracted, drop points are added. Skip both when either
- * hour cell is missing so a half-filled row cannot skew the score.
+ * Pickup points are subtracted, drop points are added. Each side is 0 when
+ * that postcode/hour is not on the sheet — do not drop the other side.
  */
 fun postcodeHourAdjustment(ride: RideRequest): Pair<Int, Int> {
     val hour = parseRideHour(ride.created_at) ?: return 0 to 0
-    val pick = lookupPostcodeScoreRow(ride.pickup_address_postcode)?.pointsAtHour(hour)
-    val drop = lookupPostcodeScoreRow(ride.dropoff_address_postcode)?.pointsAtHour(hour)
-    if (pick == null || drop == null) return 0 to 0
+    val pick = lookupPostcodeScoreRow(ride.pickup_address_postcode)?.pointsAtHour(hour) ?: 0
+    val drop = lookupPostcodeScoreRow(ride.dropoff_address_postcode)?.pointsAtHour(hour) ?: 0
     return pick to drop
 }
 
