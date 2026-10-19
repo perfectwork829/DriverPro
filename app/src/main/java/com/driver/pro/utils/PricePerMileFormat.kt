@@ -1,6 +1,8 @@
 package com.driver.pro.utils
 
+import com.driver.pro.DEFAULT_OPERATING_COST_PER_MILE
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -27,3 +29,20 @@ fun digitInputToApiPounds(digits: String): Double {
 
 fun formatApiPriceForRequest(pounds: Double): String =
     String.format(Locale.US, "%.2f", pounds)
+
+/**
+ * Cost used for live scoring. The Start screen can show £0.10 from the API
+ * while local prefs are still the default £0.50 until the driver edits a digit.
+ * Persist whatever this returns as soon as the Start screen loads.
+ */
+fun operatingCostForSession(
+    local: Double,
+    apiPrice: Double?,
+    defaultCost: Double = DEFAULT_OPERATING_COST_PER_MILE,
+): Double {
+    if (apiPrice == null) return local
+    val localIsCustom = abs(local - defaultCost) > 0.009
+    val apiIsDefault = abs(apiPrice - defaultCost) < 0.009
+    if (localIsCustom && apiIsDefault && abs(local - apiPrice) > 0.009) return local
+    return apiPrice
+}

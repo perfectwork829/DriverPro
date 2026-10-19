@@ -46,7 +46,7 @@ fun DriverPROApp() {
     val apiService = remember { ApiClient.create(sessionManager) }
 
     LaunchedEffect(Unit) {
-        viewModel.loadUser(sessionManager, apiService)
+        viewModel.loadUser(sessionManager, apiService, context.applicationContext)
     }
 
     if (loading) {

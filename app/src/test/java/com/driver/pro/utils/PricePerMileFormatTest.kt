@@ -42,4 +42,19 @@ class PricePerMileFormatTest {
         assertEquals(2, rows.rowUsedForScoring()!!.id)
         assertEquals(0.50, rows.rowUsedForScoring()!!.price_per_mile, 0.001)
     }
+
+    @Test
+    fun launch_uses_api_cost_when_local_is_still_default_50p() {
+        assertEquals(0.10, operatingCostForSession(0.50, 0.10), 0.001)
+    }
+
+    @Test
+    fun launch_keeps_local_cost_when_api_is_still_stale_50p() {
+        assertEquals(0.10, operatingCostForSession(0.10, 0.50), 0.001)
+    }
+
+    @Test
+    fun launch_follows_api_when_both_are_custom() {
+        assertEquals(0.20, operatingCostForSession(0.35, 0.20), 0.001)
+    }
 }

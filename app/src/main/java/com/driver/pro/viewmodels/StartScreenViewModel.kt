@@ -13,6 +13,7 @@ import com.driver.pro.network.PricePerMileResponse
 import com.driver.pro.network.rowUsedForScoring
 import com.driver.pro.saveOperatingCostPerMile
 import com.driver.pro.getOperatingCostPerMile
+import com.driver.pro.persistSessionOperatingCost
 import com.driver.pro.utils.digitInputToApiPounds
 import com.driver.pro.utils.formatApiPriceToDigitInput
 import kotlin.math.abs
@@ -37,6 +38,8 @@ class StartScreenViewModel(
         viewModelScope.launch {
             loadError = null
             try {
+                applySavedPrice(api.getPricePerMile(userId))
+
                 cities = api.getCities()
 
                 val userCities = api.getUserCities(userId)
@@ -45,8 +48,6 @@ class StartScreenViewModel(
                 } else {
                     Log.w(TAG, "No saved city for user $userId")
                 }
-
-                applySavedPrice(api.getPricePerMile(userId))
             } catch (e: Exception) {
                 Log.e(TAG, "Start screen load failed for user $userId", e)
                 pricePerMile = formatApiPriceToDigitInput(
@@ -124,22 +125,13 @@ class StartScreenViewModel(
 
     private fun applySavedPrice(rows: List<PricePerMileResponse>) {
         val scoring = rows.rowUsedForScoring()
-        val local = getOperatingCostPerMile(appContext)
-        if (scoring == null) {
-            scoringPriceRowId = null
-            pricePerMile = formatApiPriceToDigitInput(local.toString())
-            Log.w(TAG, "GET price-per-mile returned empty list, using local=$local")
-            return
-        }
-        scoringPriceRowId = scoring.id
-        val apiPrice = scoring.price_per_mile
-        // Prefer the value the driver just set locally if the scoring row is still the old 0.50.
-        val display = if (abs(local - apiPrice) > 0.009 && abs(apiPrice - 0.50) < 0.009 && local != 0.50) {
-            local
-        } else {
-            apiPrice
-        }
+        scoringPriceRowId = scoring?.id
+        val display = persistSessionOperatingCost(appContext, scoring?.price_per_mile)
         pricePerMile = formatApiPriceToDigitInput(display.toString())
-        Log.d(TAG, "Loaded price_per_mile scoring=$apiPrice local=$local display=$pricePerMile id=${scoring.id}")
+        if (scoring == null) {
+            Log.w(TAG, "GET price-per-mile returned empty list, using local=$display")
+        } else {
+            Log.d(TAG, "Loaded price_per_mile scoring=${scoring.price_per_mile} display=$pricePerMile id=${scoring.id}")
+        }
     }
 }

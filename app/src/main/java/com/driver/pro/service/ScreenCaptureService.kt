@@ -2474,6 +2474,9 @@ class ScreenCaptureService : Service() {
                 ride.ocr_image_uri = imageUri?.toString().orEmpty()
 
                 val operatingCost = getOperatingCostPerMile(applicationContext)
+                val scoredAt = java.time.LocalDateTime.now().format(
+                    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+                )
                 val scoringRide = ride.copy(
                     pickup_distance_value = ride.pickup_distance_value?.let {
                         kotlin.math.round(it * 10.0) / 10.0
@@ -2484,7 +2487,9 @@ class ScreenCaptureService : Service() {
                     raw_text = rewriteOcrMilesToParsed(updatedText, ride),
                     cost_per_mile = operatingCost,
                     price_per_mile = operatingCost,
+                    created_at = scoredAt,
                 )
+                val formulaScore = computeFormulaScore(scoringRide, operatingCost)
                 val jsonPayload = rideRequestHttpBody(scoringRide)
                 logRideRequestPayload(ride, jsonPayload)
                 CoroutineScope(Dispatchers.IO).launch {
@@ -2502,7 +2507,11 @@ class ScreenCaptureService : Service() {
                     if (rideRequest == null) {
                         val err = responseResult.exceptionOrNull()?.message ?: "unknown error"
                         Log.e("MY-BROADCAST", "ride scoring failed: $err")
-                        broadcastResultBanner(ride, score = null, holdMs = 4000L)
+                        val localRide = scoringRide.copy(final_score = formulaScore)
+                        broadcastResultBanner(localRide, formulaScore, holdMs = 4000L)
+                        if (formulaScore != null) {
+                            saveNewRequest(applicationContext, "RIDE-REQUESTS", localRide)
+                        }
                     } else {
                         val scored = rideRequest.copy(
                             raw_text = ride.raw_text,
@@ -2516,12 +2525,8 @@ class ScreenCaptureService : Service() {
                             trip_time_minutes = ride.trip_time_minutes,
                             trip_distance_value = ride.trip_distance_value,
                             dropoff_address_postcode = ride.dropoff_address_postcode,
+                            created_at = scoredAt,
                         )
-                        val scoredAt = java.time.LocalDateTime.now().format(
-                            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
-                        )
-                        val rideForScore = ride.copy(created_at = scoredAt)
-                        val formulaScore = computeFormulaScore(rideForScore, operatingCost)
                         val restoredServer = promoteTruncatedRideScore(scored.final_score, ride)
                         val score = formulaScore ?: restoredServer ?: scored.final_score
                         val serverDecision = scored.acceptedOrRejected

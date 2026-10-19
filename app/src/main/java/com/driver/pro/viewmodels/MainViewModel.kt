@@ -1,11 +1,14 @@
 package com.driver.pro.viewmodels
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.driver.pro.network.ApiService
+import com.driver.pro.network.rowUsedForScoring
 import com.driver.pro.network.SessionManager
 import com.driver.pro.network.User
+import com.driver.pro.persistSessionOperatingCost
 import com.driver.pro.repository.UserRepository
 import retrofit2.HttpException
 import java.io.IOException
@@ -39,7 +42,7 @@ class MainViewModel : ViewModel() {
         _user.value = null
     }
 
-    fun loadUser(sessionManager: SessionManager, apiService: ApiService) {
+    fun loadUser(sessionManager: SessionManager, apiService: ApiService, appContext: Context) {
         viewModelScope.launch {
             val token = sessionManager.getAccessToken()
             if (token == null) {
@@ -50,6 +53,15 @@ class MainViewModel : ViewModel() {
             try {
                 val result = apiService.getUser()
                 _user.value = result.user
+                try {
+                    val rows = apiService.getPricePerMile(result.user.id)
+                    persistSessionOperatingCost(
+                        appContext.applicationContext,
+                        rows.rowUsedForScoring()?.price_per_mile,
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "price-per-mile prefetch failed", e)
+                }
             } catch (e: HttpException) {
                 Log.e(TAG, "getUser failed: HTTP ${e.code()}", e)
                 if (e.code() == 401) {

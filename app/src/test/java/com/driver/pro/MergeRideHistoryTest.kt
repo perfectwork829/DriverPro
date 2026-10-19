@@ -93,6 +93,18 @@ class MergeRideHistoryTest {
     }
 
     @Test
+    fun keepsLocalCreatedAtSoHourPointsStayOnDeviceClock() {
+        val local = listOf(
+            ride(id = 5519, price = 54.99, createdAt = "2026-10-18 21:04:00", score = 51),
+        )
+        val api = listOf(
+            ride(id = 5519, price = 54.99, createdAt = "2026/10/18 20:04:00", score = 51),
+        )
+        val merged = mergeRideHistory(local, api)
+        assertEquals("2026-10-18 21:04:00", merged[0].created_at)
+    }
+
+    @Test
     fun preferDisplayedScoreRestoresTruncatedApiWhenLocalIsRemainder() {
         assertEquals(110, preferDisplayedScore(10, 110))
         assertEquals(110, preferDisplayedScore(110, 10))

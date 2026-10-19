@@ -192,6 +192,17 @@ class ScoreFormulaTest {
     }
 
     @Test
+    fun tape_shows_hour_terms_even_when_table_has_no_cell() {
+        val job = ride(50.63, 3, 74, 0.6, 48.8, pickupPc = "SE1", dropPc = "SE15")
+            .copy(cost_per_mile = 0.50)
+        assertEquals(0 to 0, postcodeHourAdjustment(job))
+        assertEquals(
+            "£0.50/mi  19.21/h  39+10 -0 +0 = 49",
+            formatFormulaBreakdown(job),
+        )
+    }
+
+    @Test
     fun known_pickup_hour_is_not_dropped_when_drop_hour_is_missing() {
         val job = ride(50.63, 3, 74, 0.6, 48.8, pickupPc = "TW6", dropPc = "SE15")
         assertEquals(6 to 0, postcodeHourAdjustment(job))

@@ -59,6 +59,10 @@ private fun sparseHours(vararg hourToPoints: Pair<Int, Int>): IntArray {
     return out
 }
 
+/** Confirmed evening window (19:00–23:59) so 8–11pm jobs still hit the sheet cell. */
+private fun eveningHours(points: Int): IntArray =
+    sparseHours(19 to points, 20 to points, 21 to points, 22 to points, 23 to points)
+
 /**
  * Outward-code rows from the client sheet. SG6 is the 17 Oct screenshot
  * (X3..X24 then A=0 B=0). Other cells are hours / A / B the client confirmed
@@ -71,27 +75,27 @@ val POSTCODE_SCORE_TABLE: Map<String, PostcodeScoreRow> = mapOf(
         returnMinutes = 0,
     ),
     "TW6" to PostcodeScoreRow(
-        hourPoints = sparseHours(20 to 6, 22 to 6),
+        hourPoints = eveningHours(6),
         returnMiles = 0.0,
         returnMinutes = 0,
     ),
     "W6" to PostcodeScoreRow(
-        hourPoints = sparseHours(21 to 7),
+        hourPoints = eveningHours(7),
         returnMiles = 0.0,
         returnMinutes = 0,
     ),
     "W11" to PostcodeScoreRow(
-        hourPoints = sparseHours(21 to 7),
+        hourPoints = eveningHours(7),
         returnMiles = 0.0,
         returnMinutes = 0,
     ),
     "TW13" to PostcodeScoreRow(
-        hourPoints = sparseHours(21 to 6),
+        hourPoints = eveningHours(6),
         returnMiles = 0.0,
         returnMinutes = 0,
     ),
     "TN16" to PostcodeScoreRow(
-        hourPoints = sparseHours(21 to 0),
+        hourPoints = eveningHours(0),
         returnMiles = 5.0,
         returnMinutes = 5,
     ),
@@ -154,12 +158,16 @@ fun netPoundsPerHour(ride: RideRequest, costPerMile: Double): Double? {
     return pph.takeIf { it.isFinite() }
 }
 
+/** Clock hour for pickup/drop points: local created time, then offer window. */
+fun rideScoreHour(ride: RideRequest): Int? =
+    parseRideHour(ride.created_at) ?: parseRideHour(ride.start_time_window)
+
 /**
  * Pickup points are subtracted, drop points are added. Each side is 0 when
  * that postcode/hour is not on the sheet — do not drop the other side.
  */
 fun postcodeHourAdjustment(ride: RideRequest): Pair<Int, Int> {
-    val hour = parseRideHour(ride.created_at) ?: return 0 to 0
+    val hour = rideScoreHour(ride) ?: return 0 to 0
     val pick = lookupPostcodeScoreRow(ride.pickup_address_postcode)?.pointsAtHour(hour) ?: 0
     val drop = lookupPostcodeScoreRow(ride.dropoff_address_postcode)?.pointsAtHour(hour) ?: 0
     return pick to drop
@@ -184,7 +192,7 @@ fun formatFormulaBreakdownParts(ride: RideRequest, costPerMile: Double): String?
     val b = StringBuilder()
     b.append(costBit).append("  ").append(pphBit)
     b.append("  ").append(hourPts).append('+').append(ratePts)
-    if (pickPts != 0 || dropPts != 0) {
+    if (rideScoreHour(ride) != null || pickPts != 0 || dropPts != 0) {
         b.append(" -").append(pickPts).append(" +").append(dropPts)
     }
     b.append(" = ").append(total)

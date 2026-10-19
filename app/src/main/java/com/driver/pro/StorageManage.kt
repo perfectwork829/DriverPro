@@ -53,10 +53,20 @@ fun getOperatingCostPerMile(context: Context?): Double {
     return pounds?.takeIf { it in 0.0..9.99 } ?: DEFAULT_OPERATING_COST_PER_MILE
 }
 
+/** Write the Start-screen cost so capture scoring matches the value on screen. */
+fun persistSessionOperatingCost(context: Context?, apiPrice: Double?): Double {
+    val display = com.driver.pro.utils.operatingCostForSession(
+        local = getOperatingCostPerMile(context),
+        apiPrice = apiPrice,
+    )
+    saveOperatingCostPerMile(context, display)
+    return display
+}
+
 fun saveOperatingCostPerMile(context: Context?, pounds: Double) {
     if (context == null) return
     val clamped = pounds.coerceIn(0.0, 9.99)
-    context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit {
+    context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit(commit = true) {
         putString(
             KEY_OPERATING_COST_PER_MILE,
             java.lang.String.format(java.util.Locale.US, "%.2f", clamped),
@@ -164,7 +174,7 @@ fun mergeRideHistory(local: List<RideRequest>, fromApi: List<RideRequest>): List
             byKey[k] = r.copy(
                 raw_text = r.raw_text.ifBlank { existing.raw_text },
                 ocr_image_uri = r.ocr_image_uri.ifBlank { existing.ocr_image_uri },
-                created_at = r.created_at.ifBlank { existing.created_at },
+                created_at = existing.created_at.ifBlank { r.created_at },
                 final_score = preferDisplayedScore(existing.final_score, r.final_score),
                 cost_per_mile = existing.cost_per_mile ?: r.cost_per_mile,
                 price_per_mile = existing.price_per_mile ?: r.price_per_mile,
