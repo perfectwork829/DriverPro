@@ -53,4 +53,13 @@ class ReturnToZoneTest {
         assertEquals(0.0, ret.miles, 0.001)
         assertEquals(0, ret.minutes)
     }
+
+    @Test
+    fun tn16_return_is_five_miles_and_five_minutes() {
+        val ret = resolveReturnToZone("W11", "TN16", 23.9, 117)
+        assertEquals(5.0, ret.miles, 0.001)
+        assertEquals(5, ret.minutes)
+        assertFalse(isTflLondonPostcode("TN16"))
+        assertTrue(isTflLondonPostcode("W11"))
+    }
 }

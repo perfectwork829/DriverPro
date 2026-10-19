@@ -142,7 +142,7 @@ fun RideRequestCard(rideRequest: RideRequest) {
                         modifier = Modifier.clickable { expanded = !expanded },
                     )
                     TextButton(onClick = {
-                        copyToClipboard(context, "DriverPro OCR", rideRequest.raw_text)
+                        copyToClipboard(context, "I drive smart OCR", rideRequest.raw_text)
                     }) {
                         Text("Copy raw OCR", fontSize = 13.sp)
                     }

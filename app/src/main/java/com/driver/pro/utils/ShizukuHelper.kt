@@ -145,7 +145,7 @@ object ShizukuHelper {
                     if (Shizuku.shouldShowRequestPermissionRationale()) {
                         Toast.makeText(
                             context,
-                            "Open Shizuku and allow driverPRO under authorized apps",
+                            "Open Shizuku and allow I drive smart under authorized apps",
                             Toast.LENGTH_LONG,
                         ).show()
                         RequestResult.DENIED_PERMANENTLY

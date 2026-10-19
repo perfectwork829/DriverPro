@@ -126,7 +126,7 @@ fun SettingsScreen(
             captureRunning = true
             Toast.makeText(
                 context,
-                "Capture started — must be Entire screen. Switch to Uber Driver.",
+                "Capture started — must be Entire screen. Switch to driver app.",
                 Toast.LENGTH_LONG,
             ).show()
         } catch (e: Exception) {
@@ -416,7 +416,7 @@ fun SettingsScreen(
             RequirementGateOverlay(
                 title = if (shizukuRunning) "Shizuku permission" else "Run Shizuku",
                 body = if (shizukuRunning) {
-                    "Shizuku is running. Tap Grant permission and allow driverPRO in the Shizuku dialog."
+                    "Shizuku is running. Tap Grant permission and allow I drive smart in the Shizuku dialog."
                 } else {
                     "Start the Shizuku app (wireless debugging or ADB), then return here and grant permission."
                 },

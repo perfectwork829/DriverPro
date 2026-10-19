@@ -13,7 +13,7 @@ import kotlin.math.ceil
  * 3. add rating points (4.51–5.00 → 10)
  * 4. subtract pickup postcode points for that hour, add drop postcode points
  *
- * A and B come from the same postcode row. London and missing rows are 0.
+ * A and B come from the drop postcode sheet row (London / missing = 0).
  */
 internal const val UNKNOWN_HOUR_POINTS = -1
 
@@ -61,8 +61,8 @@ private fun sparseHours(vararg hourToPoints: Pair<Int, Int>): IntArray {
 
 /**
  * Outward-code rows from the client sheet. SG6 is the 17 Oct screenshot
- * (X3..X24 then A=0 B=0). TW6 / W6 / TW13 cells are the hours the client
- * confirmed on 17–18 Oct (pickup subtracted, drop added).
+ * (X3..X24 then A=0 B=0). Other cells are hours / A / B the client confirmed
+ * on 17–19 Oct (pickup subtracted, drop added).
  */
 val POSTCODE_SCORE_TABLE: Map<String, PostcodeScoreRow> = mapOf(
     "SG6" to PostcodeScoreRow(
@@ -80,10 +80,20 @@ val POSTCODE_SCORE_TABLE: Map<String, PostcodeScoreRow> = mapOf(
         returnMiles = 0.0,
         returnMinutes = 0,
     ),
+    "W11" to PostcodeScoreRow(
+        hourPoints = sparseHours(21 to 7),
+        returnMiles = 0.0,
+        returnMinutes = 0,
+    ),
     "TW13" to PostcodeScoreRow(
         hourPoints = sparseHours(21 to 6),
         returnMiles = 0.0,
         returnMinutes = 0,
+    ),
+    "TN16" to PostcodeScoreRow(
+        hourPoints = sparseHours(21 to 0),
+        returnMiles = 5.0,
+        returnMinutes = 5,
     ),
 )
 

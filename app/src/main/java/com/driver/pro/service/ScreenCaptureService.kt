@@ -1931,7 +1931,7 @@ class ScreenCaptureService : Service() {
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         Log.d("MY-BROADCAST", "service start")
         startForegroundService()
-        toastOnMain("driverPRO: capturing (see notification shade)")
+        toastOnMain("I drive smart: capturing (see notification shade)")
 
         val resultCode = intent.getIntExtra("code", Activity.RESULT_CANCELED)
         val resultData = projectionConsentIntent(intent)
@@ -1981,7 +1981,7 @@ class ScreenCaptureService : Service() {
                 // High visibility: user must see capture is active; requires notification permission on API 33+.
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Shown while driverPRO captures the screen"
+                description = "Shown while I drive smart captures the screen"
                 setShowBadge(true)
             }
             applicationContext.getSystemService(NotificationManager::class.java).createNotificationChannel(chan)
@@ -1998,7 +1998,7 @@ class ScreenCaptureService : Service() {
 
         val notification = Notification.Builder(this, channelId)
             .setContentTitle("Capturing screen")
-            .setContentText("Entire-screen capture active — switch to Uber Driver")
+            .setContentText("Entire-screen capture active — switch to driver app")
             .setSmallIcon(R.drawable.ic_stat_notify)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)

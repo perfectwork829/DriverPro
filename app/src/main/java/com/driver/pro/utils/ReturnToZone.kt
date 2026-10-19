@@ -5,13 +5,8 @@ import com.driver.pro.RideRequest
 /**
  * Return-to-zone (A miles, B minutes) for a London-start job that drops outside TfL.
  *
- * Lookup only: 16 Oct client scores use outbound C,D,E,F (no A/B).
- * Intra-London drops stay A=0, B=0.
- * Pickup outside TfL London is not a London job — no return is added.
- *
- * Table is keyed by outward code (SN2) then area (SN). Missing rows fall back
- * to the outbound trip (A=D, B=F). Replace [DEFAULT_RETURN_TO_ZONE] when the
- * admin spreadsheet is imported.
+ * A/B come from the drop postcode sheet row only. Intra-London and missing
+ * rows stay 0 — do not guess. Pickup outside TfL London is not a London job.
  */
 data class ReturnToZone(
     val miles: Double,

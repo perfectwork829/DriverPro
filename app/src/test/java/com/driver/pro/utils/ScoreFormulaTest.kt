@@ -197,4 +197,37 @@ class ScoreFormulaTest {
         assertEquals(6 to 0, postcodeHourAdjustment(job))
         assertEquals(43, computeFormulaScore(job, 0.50))
     }
+
+    @Test
+    fun id_5519_w11_tn16_includes_return_and_hour_points() {
+        val card = RideRequest(
+            id = 5519,
+            price = 54.99,
+            rating = 4.60,
+            pickup_time_minutes = 5,
+            pickup_distance_value = 0.6,
+            pickup_address_postcode = "W11",
+            trip_time_minutes = 117,
+            trip_distance_value = 23.9,
+            dropoff_address_postcode = "TN16",
+            start_time_window = null,
+            end_time_window = null,
+            acceptedOrRejected = 0,
+            final_score = 61,
+            created_at = "18 Oct 2026, 21:04",
+            cost_per_mile = 0.10,
+            price_per_mile = 0.10,
+        )
+        assertEquals(5.0, resolveReturnToZone(card).miles, 0.001)
+        assertEquals(5, resolveReturnToZone(card).minutes)
+        assertEquals(21, parseRideHour(card.created_at))
+        assertEquals(7 to 0, postcodeHourAdjustment(card))
+        assertEquals(23.84, netPoundsPerHour(card, 0.10)!!, 0.005)
+        assertEquals(48, poundsPerHourToPoints(23.84))
+        assertEquals(51, displayedFormulaScore(card))
+        assertEquals(
+            "£0.10/mi  23.84/h  48+10 -7 +0 = 51",
+            formatFormulaBreakdown(card),
+        )
+    }
 }
