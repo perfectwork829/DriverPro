@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.driver.pro.RideRequest
 import com.driver.pro.utils.displayedFormulaScore
-import com.driver.pro.utils.formatFormulaBreakdown
 import com.driver.pro.utils.formatOfferEarningsLine
 
 internal fun formatHistoryCreatedAt(raw: String?): String? {
@@ -114,10 +113,6 @@ fun RideRequestCard(rideRequest: RideRequest) {
             Spacer(modifier = Modifier.height(4.dp))
             val shownScore = displayedFormulaScore(rideRequest) ?: rideRequest.final_score
             Text("Score: ${shownScore ?: "N/A"} - ${showResult(rideRequest.acceptedOrRejected)}", fontSize = 14.sp, style = MaterialTheme.typography.bodyMedium)
-            formatFormulaBreakdown(rideRequest)?.let { tape ->
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(tape, fontSize = 13.sp, style = MaterialTheme.typography.bodyMedium)
-            }
             formatOfferEarningsLine(rideRequest)?.let { earnings ->
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(

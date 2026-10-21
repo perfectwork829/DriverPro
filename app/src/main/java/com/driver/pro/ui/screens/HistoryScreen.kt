@@ -31,7 +31,6 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.driver.pro.BuildConfig
 import com.driver.pro.RideRequest
 import com.driver.pro.clearAllRequests
 import com.driver.pro.getHistoryClearedAtMs
@@ -202,7 +201,7 @@ fun HistoryScreen() {
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                text = "History (v${BuildConfig.VERSION_NAME})",
+                text = "History",
                 style = MaterialTheme.typography.headlineLarge,
             )
 

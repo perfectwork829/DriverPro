@@ -18,7 +18,7 @@ import kotlin.math.ceil
 internal const val UNKNOWN_HOUR_POINTS = -1
 
 data class PostcodeScoreRow(
-    /** Hours 0..24. Index 24 is midnight (00:00). -1 means that hour is not on the sheet. */
+    /** Hours 0..24. Index 1 is X1 (01:00), index 24/0 is X24 (00:00). -1 = missing. */
     val hourPoints: IntArray,
     val returnMiles: Double = 0.0,
     val returnMinutes: Int = 0,
@@ -34,78 +34,61 @@ data class PostcodeScoreRow(
     }
 }
 
-private fun hours(vararg fromHour3: Int): IntArray {
-    require(fromHour3.size == 22) { "X3..X24 is 22 values" }
+private fun kodyHourArray(x1ToX24: IntArray): IntArray {
     val out = IntArray(25) { UNKNOWN_HOUR_POINTS }
-    for (i in fromHour3.indices) {
-        out[i + 3] = fromHour3[i]
+    for (i in x1ToX24.indices) {
+        out[i + 1] = x1ToX24[i]
     }
     out[0] = out[24]
     return out
 }
 
-/** Known hour cells when the full X3–X24 row is not on the sheet yet. */
-private fun sparseHours(vararg hourToPoints: Pair<Int, Int>): IntArray {
-    val out = IntArray(25) { UNKNOWN_HOUR_POINTS }
-    for ((hour, pts) in hourToPoints) {
-        when (hour) {
-            0, 24 -> {
-                out[24] = pts
-                out[0] = pts
-            }
-            in 1..23 -> out[hour] = pts
+private val kodyScoreRows: Map<String, PostcodeScoreRow> by lazy {
+    buildMap {
+        for ((code, ref) in KodyTable.rows) {
+            val pattern = KodyTable.patterns.getOrNull(ref.pattern) ?: continue
+            put(
+                code,
+                PostcodeScoreRow(
+                    hourPoints = kodyHourArray(pattern),
+                    returnMiles = ref.returnMiles.coerceAtLeast(0.0),
+                    returnMinutes = ref.returnMinutes.coerceAtLeast(0),
+                ),
+            )
         }
     }
-    return out
 }
 
-/** Confirmed evening window (19:00–23:59) so 8–11pm jobs still hit the sheet cell. */
-private fun eveningHours(points: Int): IntArray =
-    sparseHours(19 to points, 20 to points, 21 to points, 22 to points, 23 to points)
+/** KODY.xlsx outward-code rows (X1–X24, A miles, B minutes). */
+val POSTCODE_SCORE_TABLE: Map<String, PostcodeScoreRow>
+    get() = kodyScoreRows
 
 /**
- * Outward-code rows from the client sheet. SG6 is the 17 Oct screenshot
- * (X3..X24 then A=0 B=0). Other cells are hours / A / B the client confirmed
- * on 17–19 Oct (pickup subtracted, drop added).
+ * Extra hour points during major London events (Wembley, concerts, etc.).
+ * Added on top of the KODY base table. Empty until an event overlay is set.
+ * Keys are outward codes; values are X1–X24 extras (length 24).
  */
-val POSTCODE_SCORE_TABLE: Map<String, PostcodeScoreRow> = mapOf(
-    "SG6" to PostcodeScoreRow(
-        hourPoints = hours(4, 5, 3, 4, 5, 6, 5, 4, 3, 3, 3, 3, 3, 5, 5, 5, 6, 6, 6, 6, 6, 3),
-        returnMiles = 0.0,
-        returnMinutes = 0,
-    ),
-    "TW6" to PostcodeScoreRow(
-        hourPoints = eveningHours(6),
-        returnMiles = 0.0,
-        returnMinutes = 0,
-    ),
-    "W6" to PostcodeScoreRow(
-        hourPoints = eveningHours(7),
-        returnMiles = 0.0,
-        returnMinutes = 0,
-    ),
-    "W11" to PostcodeScoreRow(
-        hourPoints = eveningHours(7),
-        returnMiles = 0.0,
-        returnMinutes = 0,
-    ),
-    "TW13" to PostcodeScoreRow(
-        hourPoints = eveningHours(6),
-        returnMiles = 0.0,
-        returnMinutes = 0,
-    ),
-    "TN16" to PostcodeScoreRow(
-        hourPoints = eveningHours(0),
-        returnMiles = 5.0,
-        returnMinutes = 5,
-    ),
-)
+@Volatile
+var kodyEventUplifts: Map<String, IntArray> = emptyMap()
+
+fun eventHourUplift(postcode: String?, hour: Int): Int {
+    val outward = ukOutwardCode(postcode) ?: return 0
+    val extras = kodyEventUplifts[outward]
+        ?: ukPostcodeArea(outward)?.let { kodyEventUplifts[it] }
+        ?: return 0
+    val idx = when (hour) {
+        0, 24 -> 23
+        in 1..23 -> hour - 1
+        else -> return 0
+    }
+    return extras.getOrNull(idx)?.coerceAtLeast(0) ?: 0
+}
 
 fun lookupPostcodeScoreRow(postcode: String?): PostcodeScoreRow? {
     val outward = ukOutwardCode(postcode) ?: return null
-    POSTCODE_SCORE_TABLE[outward]?.let { return it }
+    kodyScoreRows[outward]?.let { return it }
     val area = ukPostcodeArea(outward) ?: return null
-    return POSTCODE_SCORE_TABLE[area]
+    return kodyScoreRows[area]
 }
 
 /** 19.01–19.50 → 39, 19.51–20.00 → 40. Same as ceil(£/h / 0.50). */
@@ -168,8 +151,10 @@ fun rideScoreHour(ride: RideRequest): Int? =
  */
 fun postcodeHourAdjustment(ride: RideRequest): Pair<Int, Int> {
     val hour = rideScoreHour(ride) ?: return 0 to 0
-    val pick = lookupPostcodeScoreRow(ride.pickup_address_postcode)?.pointsAtHour(hour) ?: 0
-    val drop = lookupPostcodeScoreRow(ride.dropoff_address_postcode)?.pointsAtHour(hour) ?: 0
+    val pick = (lookupPostcodeScoreRow(ride.pickup_address_postcode)?.pointsAtHour(hour) ?: 0) +
+        eventHourUplift(ride.pickup_address_postcode, hour)
+    val drop = (lookupPostcodeScoreRow(ride.dropoff_address_postcode)?.pointsAtHour(hour) ?: 0) +
+        eventHourUplift(ride.dropoff_address_postcode, hour)
     return pick to drop
 }
 

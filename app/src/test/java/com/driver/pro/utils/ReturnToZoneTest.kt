@@ -42,9 +42,17 @@ class ReturnToZoneTest {
     }
 
     @Test
-    fun rh6_has_no_return_until_sheet_row_exists() {
+    fun rh6_return_is_fifteen_miles_and_fifteen_minutes() {
         val ret = resolveReturnToZone("TW6", "RH6", 39.3, 51)
-        assertEquals(ReturnToZone.NONE, ret)
+        assertEquals(15.0, ret.miles, 0.001)
+        assertEquals(15, ret.minutes)
+    }
+
+    @Test
+    fun sn2_return_is_from_kody_sheet() {
+        val ret = resolveReturnToZone("SW1A", "SN2", 78.0, 100)
+        assertEquals(57.0, ret.miles, 0.001)
+        assertEquals(60, ret.minutes)
     }
 
     @Test
