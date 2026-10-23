@@ -71,7 +71,7 @@ fun StartScreen(
         Spacer(modifier = Modifier.height(70.dp))
 
         Text(
-            "IN WHAT CITY DO YOU\nHAVE YOUR LICENCE?",
+            "In which city do you hold a\nlicense?",
             fontSize = 26.sp,
             textAlign = TextAlign.Center
         )

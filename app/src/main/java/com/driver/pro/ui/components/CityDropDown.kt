@@ -8,6 +8,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import com.driver.pro.network.City
+import com.driver.pro.utils.licenceCityLabel
 
 
 
@@ -23,9 +24,7 @@ fun CityDropdown(
 
     var expanded by remember { mutableStateOf(false) }
 
-    val selectedText = selectedCity?.let {
-        "${it.name} (${it.type})"
-    } ?: ""
+    val selectedText = selectedCity?.let { licenceCityLabel(it) } ?: ""
 
     ExposedDropdownMenuBox(
         expanded = expanded,
@@ -55,7 +54,7 @@ fun CityDropdown(
                 DropdownMenuItem(
                     text = {
                         Text(
-                            text = "${city.name} (${city.type})",
+                            text = licenceCityLabel(city),
                             fontSize = dropdownFontSize
                         )
                     },

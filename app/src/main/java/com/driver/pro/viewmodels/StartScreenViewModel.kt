@@ -16,6 +16,8 @@ import com.driver.pro.getOperatingCostPerMile
 import com.driver.pro.persistSessionOperatingCost
 import com.driver.pro.utils.digitInputToApiPounds
 import com.driver.pro.utils.formatApiPriceToDigitInput
+import com.driver.pro.utils.isLondonLicenceCity
+import com.driver.pro.utils.londonLicenceCities
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
@@ -40,13 +42,16 @@ class StartScreenViewModel(
             try {
                 applySavedPrice(api.getPricePerMile(userId))
 
-                cities = api.getCities()
+                cities = londonLicenceCities(api.getCities())
 
-                val userCities = api.getUserCities(userId)
-                if (userCities.isNotEmpty()) {
-                    selectedCity = userCities.first().city
-                } else {
-                    Log.w(TAG, "No saved city for user $userId")
+                val saved = api.getUserCities(userId).firstOrNull()?.city
+                val london = cities.firstOrNull()
+                selectedCity = cities.firstOrNull { saved != null && it.id == saved.id } ?: london
+                if (london != null && (saved == null || !isLondonLicenceCity(saved))) {
+                    changeCity(userId, london)
+                }
+                if (london == null) {
+                    Log.w(TAG, "API city list has no London row for user $userId")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Start screen load failed for user $userId", e)
