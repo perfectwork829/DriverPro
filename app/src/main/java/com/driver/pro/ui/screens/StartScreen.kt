@@ -90,7 +90,7 @@ fun StartScreen(
         Spacer(modifier = Modifier.height(70.dp))
 
         Text(
-            "HOW MUCH DOES IT\nCOST YOU TO DRIVE\n1 MILE?",
+            "How much does it cost you to\ndrive 1 mile?",
             fontSize = 26.sp,
             textAlign = TextAlign.Center
         )
