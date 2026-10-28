@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -60,7 +62,8 @@ fun StartScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .fillMaxSize()
-            .padding(vertical = 100.dp, horizontal = 40.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 40.dp, vertical = 24.dp)
     ) {
 
         Text(
@@ -68,7 +71,7 @@ fun StartScreen(
             fontSize = 32.sp
         )
 
-        Spacer(modifier = Modifier.height(70.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
         Text(
             "In which city do you hold a\nlicense?",
@@ -87,7 +90,7 @@ fun StartScreen(
             textFieldFontSize = 20.sp,
             dropdownFontSize = 18.sp
         )
-        Spacer(modifier = Modifier.height(70.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
         Text(
             "How much does it cost you to\ndrive 1 mile?",
