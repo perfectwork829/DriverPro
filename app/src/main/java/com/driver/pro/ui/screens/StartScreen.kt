@@ -110,14 +110,6 @@ fun StartScreen(
             },
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            "050 = £0.50   ·   055 = £0.55",
-            fontSize = 14.sp,
-            color = Color.Gray,
-            textAlign = TextAlign.Center,
-        )
-
         viewModel.loadError?.let { err ->
             Spacer(modifier = Modifier.height(16.dp))
             Text(
