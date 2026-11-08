@@ -39,6 +39,10 @@ data class RideRequest(
     val price_per_mile: Double? = null,
 )
 
+/** Incomplete OCR attempts stored for developers — never show these on customer History. */
+fun isOcrDebugRide(ride: RideRequest): Boolean =
+    ride.raw_text.startsWith("OCR debug", ignoreCase = true)
+
 private const val MAX_STORED_RIDES = 120
 private val rideListType = object : TypeToken<MutableList<RideRequest>>() {}.type
 

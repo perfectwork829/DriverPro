@@ -37,8 +37,10 @@ fun extractAccessibilityRideHints(rawText: String): AccessibilityRideHints {
     val rating = pickBestPassengerRating(emptyList(), text)
     val type = when {
         Regex("""\bConfirm\b""", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "confirm"
-        Regex("""\bMatch\b""", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "match"
+        Regex("""\bAkceptuj\b""", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "confirm"
         Regex("""\bAccept\b""", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "confirm"
+        Regex("""\bMatch\b""", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "match"
+        Regex("""\bDopasowanie\b""", RegexOption.IGNORE_CASE).containsMatchIn(text) -> "match"
         else -> null
     }
     return AccessibilityRideHints(

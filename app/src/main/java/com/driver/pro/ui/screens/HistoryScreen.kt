@@ -36,6 +36,7 @@ import com.driver.pro.clearAllRequests
 import com.driver.pro.getHistoryClearedAtMs
 import com.driver.pro.getRideRequestArray
 import com.driver.pro.getToken
+import com.driver.pro.isOcrDebugRide
 import com.driver.pro.isRideAfterHistoryClear
 import com.driver.pro.markHistoryCleared
 import com.driver.pro.mergeRideHistory
@@ -141,24 +142,15 @@ fun HistoryScreen() {
         mutableIntStateOf(0)
     }
 
+    val customerRides = rideRequestsState.value.filter { !isOcrDebugRide(it) }
+    val byTime = compareByDescending<RideRequest> { parseRideCreatedAtMs(it.created_at) ?: 0L }
+        .thenByDescending { it.id }
     val filteredRideRequest = if (mFilter.value == 1) {
-        rideRequestsState.value
+        customerRides
             .filter { it.acceptedOrRejected == 1 }
-            .sortedWith(
-                compareByDescending<RideRequest> { parseRideCreatedAtMs(it.created_at) ?: 0L }
-                    .thenByDescending { it.id },
-            )
+            .sortedWith(byTime)
     } else {
-        // Newest first by time (local stamps + server). Debug OCR rows stay on top.
-        val byTime = compareByDescending<RideRequest> { parseRideCreatedAtMs(it.created_at) ?: 0L }
-            .thenByDescending { it.id }
-        val debug = rideRequestsState.value
-            .filter { it.raw_text.startsWith("OCR debug", ignoreCase = true) }
-            .sortedWith(byTime)
-        val rest = rideRequestsState.value
-            .filter { !it.raw_text.startsWith("OCR debug", ignoreCase = true) }
-            .sortedWith(byTime)
-        debug + rest
+        customerRides.sortedWith(byTime)
     }
 
     if (showClearConfirm.value) {

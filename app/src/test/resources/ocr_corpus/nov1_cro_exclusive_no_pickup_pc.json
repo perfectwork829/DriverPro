@@ -1,0 +1,11 @@
+{
+  "id": "nov1_cro_exclusive_no_pickup_pc",
+  "note": "Nov 2026 Polish Accept/Exclusive: fare and drop parse; Uber omitted pickup postcode — do not invent",
+  "price": 6.68,
+  "rating": 4.66,
+  "pickup_postcode": "",
+  "drop_postcode": "CR0",
+  "pickup_miles": 0.3,
+  "trip_miles": 3.9,
+  "must_not_score": true
+}

@@ -200,7 +200,7 @@ open class DriverAppAccessibilityService : AccessibilityService() {
     private fun tryPerformDecisionTap(status: Int, score: Int): Boolean {
         val root = rootInActiveWindow ?: return false
         val labels = if (status == 1) {
-            listOf("Confirm", "Match", "Accept", "ACCEPT")
+            listOf("Confirm", "Match", "Accept", "ACCEPT", "Akceptuj", "Dopasowanie")
         } else {
             listOf("Close", "Dismiss", "Decline", "No thanks", "Pass", "Not now")
         }

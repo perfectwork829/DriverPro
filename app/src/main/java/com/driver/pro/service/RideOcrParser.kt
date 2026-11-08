@@ -14,11 +14,90 @@ internal fun String.fixOcrDigits(): String = this
 internal const val OCR_DIGIT = """[0-9ilLoO]"""
 
 /**
+ * Nov 2026 Uber Driver cards (PL/EU and the new UK bullet layout):
+ * `12,70 GBP`, `18 minut • 7.2 mil`, `Dopasowanie` / `Akceptuj`.
+ * Rewrites to the existing `£12.70` / `18 min (7.2 mi)` / Match|Confirm shape.
+ * Safe to run more than once.
+ */
+internal fun normalizeUberOfferLayout(text: String): String {
+    var out = text
+    val bullet = "[•·∙●*°\\-–—]"
+    out = out.replace(
+        Regex(
+            """\b(\d{1,3})\s*(?:minut(?:a|y)?|minutes?|mins?)\s*$bullet?\s*(\d+[.,]\d{1,2})\s*(?:miles?|mil)\b""",
+            RegexOption.IGNORE_CASE,
+        ),
+    ) { m ->
+        val miles = m.groupValues[2].replace(',', '.')
+        "${m.groupValues[1]} min ($miles mi)"
+    }
+    out = out.replace(
+        Regex("""\b(\d{1,3})[.,](\d{2})\s*GBP\b""", RegexOption.IGNORE_CASE),
+        "£$1.$2",
+    )
+    out = out.replace(
+        Regex("""\bGBP\s*(\d{1,3})[.,](\d{2})\b""", RegexOption.IGNORE_CASE),
+        "£$1.$2",
+    )
+    out = out.replace(
+        Regex("""\b(\d{1,3})[.,](\d{2})\s*[\n\r]+\s*GBP\b""", RegexOption.IGNORE_CASE),
+        "£$1.$2",
+    )
+    out = out.replace(Regex("""\bDopasowanie\b""", RegexOption.IGNORE_CASE), "Match")
+    out = out.replace(Regex("""\bAkceptuj\b""", RegexOption.IGNORE_CASE), "Confirm")
+    out = out.replace(Regex("""\bZweryfikowano\b""", RegexOption.IGNORE_CASE), "Verified")
+    out = out.replace(
+        Regex("""uprawnienie\s+do\s+wolnego""", RegexOption.IGNORE_CASE),
+        "est. holiday entitlement",
+    )
+    return out
+}
+
+/**
+ * True when OCR looks like a Driver Match/Confirm/Accept card, including the
+ * Nov 2026 bullet + GBP layout.
+ */
+internal fun isRideOfferCard(text: String): Boolean {
+    val normalized = normalizeUberOfferLayout(fixWrongLetterToNumber(text))
+    val lower = normalized.lowercase()
+    val hasAcceptButton = listOf(
+        "confirm", "match", "accept", "acept", "confirnm", "dopasowanie", "akceptuj",
+    ).any { lower.contains(it) }
+    if (!hasAcceptButton) return false
+    val hasCloseButton =
+        lower.contains("x") ||
+            lower.contains("close") ||
+            lower.contains("dismiss") ||
+            lower.contains("cancel")
+    val hasTimeKey =
+        listOf("min (", "mins (", "min(", "mins(").any { lower.contains(it) } ||
+            Regex("""\b\d{1,3}\s*mins?\b""").containsMatchIn(lower) ||
+            Regex("""\b\d{1,3}\s*minut""").containsMatchIn(lower)
+    val hasDistanceKey =
+        lower.contains("mi)") ||
+            Regex("""\bmiles?\b""").containsMatchIn(lower) ||
+            Regex("""\d+\.?\d*\s*miles?\b""").containsMatchIn(lower) ||
+            Regex("""\d+[.,]\d+\s*mil\b""").containsMatchIn(lower)
+    val isPound =
+        Regex("""[$£]\d+([.,]\d{1,2})?""").containsMatchIn(normalized) ||
+            Regex("""\d+[.,]\d{2}\s*GBP""", RegexOption.IGNORE_CASE).containsMatchIn(text)
+    val looksLikeMatch =
+        lower.contains("match") || lower.contains("dopasowanie")
+    val looksLikeConfirm =
+        lower.contains("confirm") || lower.contains("confirnm") ||
+            lower.contains("accept") || lower.contains("akceptuj")
+    val strictCard = hasCloseButton && hasTimeKey && isPound && hasDistanceKey
+    val matchStackOffer = looksLikeMatch && hasTimeKey && hasDistanceKey
+    val confirmStackOffer = looksLikeConfirm && hasTimeKey && hasDistanceKey
+    return strictCard || matchStackOffer || confirmStackOffer
+}
+
+/**
  * Repair common ML Kit garble on Uber offer dumps before fare/postcode parsing.
  * Safe to run more than once.
  */
 internal fun normalizeOcrOfferText(text: String): String {
-    var out = text
+    var out = normalizeUberOfferLayout(text)
     // HAS OYJ → HA9 0YJ (9 misread as S on Costco / Wembley cards).
     out = out.replace(
         Regex("""\bHAS\s+([O0])([A-Za-z]{2})\b""", RegexOption.IGNORE_CASE),
@@ -255,7 +334,8 @@ internal fun filterLinesToOfferCardZone(lines: List<OcrLine>): List<OcrLine> {
     val actionBottom = lines
         .filter { line ->
             val t = line.text.lowercase()
-            t.contains("confirm") || t.contains("match") || t.contains("confirnm")
+            t.contains("confirm") || t.contains("match") || t.contains("confirnm") ||
+                t.contains("accept") || t.contains("dopasowanie") || t.contains("akceptuj")
         }
         .maxOfOrNull { it.top }
     val cardBottom = (actionBottom ?: lines.maxOf { it.top }) + 120
@@ -801,7 +881,7 @@ internal fun rewriteOcrMilesToParsed(ocr: String, ride: RideRequest): String {
 /** e.g. "2 min (0.3 mi)", "26 mins (5.0 mi)", "1 hr 1 min (17.7 mi)", "6min l6 m)", "29 mins (94 mi)" */
 internal fun parseTripLegFromLine(line: String): TripLegParse? {
     val originalLine = line
-    var normalized = line
+    var normalized = normalizeUberOfferLayout(line)
         .replace(',', '.') // "1,2 mi" / European decimals before other normalisations
         .replace(Regex("m[l1]n", RegexOption.IGNORE_CASE), "min")
         .replace(Regex("m[l1]\\)", RegexOption.IGNORE_CASE), "mi)")
@@ -958,7 +1038,9 @@ internal fun isAddonFareLine(line: String): Boolean {
     val lower = line.lowercase().trim()
     if (
         (lower.contains("included") && lower.contains("priority")) ||
-        (lower.contains("est") && (lower.contains("holiday") || lower.contains("entitlement")))
+        (lower.contains("est") && (lower.contains("holiday") || lower.contains("entitlement"))) ||
+        (lower.contains("uprawnienie") && lower.contains("wolnego")) ||
+        (lower.contains("wliczone") && lower.contains("wolnego"))
     ) {
         return true
     }
@@ -978,7 +1060,7 @@ internal fun normalizeOcrCurrencyLine(line: String): String {
 
 internal fun lineHasCurrencySymbol(line: String): Boolean {
     val n = normalizeOcrCurrencyLine(line)
-    return n.contains('£') || n.contains('$')
+    return n.contains('£') || n.contains('$') || n.contains("GBP", ignoreCase = true)
 }
 
 /**
@@ -1109,6 +1191,16 @@ private fun parseFareFromSingleLine(rawLine: String): Double? {
         normalizeFareWithoutDecimal(raw.toDouble())?.let { candidates.add(it) }
     }
 
+    // Nov 2026: "12,70 GBP" / "GBP 6.68" when £ was not rewritten yet.
+    Regex(
+        """(?:£\s*)?($OCR_DIGIT{1,3})[.,]($OCR_DIGIT{2})\s*GBP\b|GBP\s*($OCR_DIGIT{1,3})[.,]($OCR_DIGIT{2})\b""",
+        RegexOption.IGNORE_CASE,
+    ).findAll(line).forEach { m ->
+        val whole = m.groupValues[1].ifEmpty { m.groupValues[3] }.fixOcrDigits()
+        val frac = m.groupValues[2].ifEmpty { m.groupValues[4] }.fixOcrDigits()
+        "$whole.$frac".toDoubleOrNull()?.let { candidates.add(it) }
+    }
+
     Regex("""(?<![\d.])(\d{1,2})\.(\d{2})(?![\d.])""").findAll(line).forEach { m ->
         if (line.contains("est", ignoreCase = true) && line.contains("holiday", ignoreCase = true)) {
             return@forEach
@@ -1147,7 +1239,10 @@ fun parseRatingFromLine(line: String): Double? {
         val r = "${m.groupValues[1]}.${m.groupValues[2]}".toDoubleOrNull()
         if (r != null && r in 3.0..5.05) return r
     }
-    Regex("""\b([1-5])\.(\d{1,2})\s*[^\d\n]{0,6}Verified""", RegexOption.IGNORE_CASE).find(normalized)?.let { m ->
+    Regex(
+        """\b([1-5])\.(\d{1,2})\s*[^\d\n]{0,12}(?:Verified|Zweryfikowano)""",
+        RegexOption.IGNORE_CASE,
+    ).find(normalized)?.let { m ->
         val r = "${m.groupValues[1]}.${m.groupValues[2]}".toDoubleOrNull()
         if (r != null && r in 3.0..5.05) return r
     }
@@ -1199,7 +1294,11 @@ fun pickBestPassengerRating(lines: List<OcrLine>, fullText: String): Double? {
     fun collectFromLine(text: String) {
         parseRatingFromLine(text)?.let { r ->
             candidates.add(r)
-            if (text.contains("Verified", ignoreCase = true) || text.contains('★') || text.contains('*')) {
+            if (text.contains("Verified", ignoreCase = true) ||
+                text.contains("Zweryfikowano", ignoreCase = true) ||
+                text.contains('★') ||
+                text.contains('*')
+            ) {
                 verifiedCandidates.add(r)
             }
         }

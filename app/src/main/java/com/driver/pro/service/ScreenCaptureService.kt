@@ -315,18 +315,27 @@ fun extractTime(text: String): List<String> {
 
 fun extractPrice(text: String): List<Double> {
     val text = stripOverlayEarnings(text)
+    val amounts = mutableListOf<Double>()
     val priceRegex = Regex("""£\s*($OCR_DIGIT{1,3})(?:\.($OCR_DIGIT{1,2}))?""", RegexOption.IGNORE_CASE)
-    return priceRegex.findAll(text).mapNotNull { match ->
+    priceRegex.findAll(text).forEach { match ->
         val frac = match.groupValues[2]
-        if (frac.isNotEmpty()) {
+        val value = if (frac.isNotEmpty()) {
             "${match.groupValues[1].fixOcrDigits()}.${frac.fixOcrDigits()}".toDoubleOrNull()
         } else {
-            val raw = match.groupValues[1].fixOcrDigits().toIntOrNull()?.toDouble() ?: return@mapNotNull null
+            val raw = match.groupValues[1].fixOcrDigits().toIntOrNull()?.toDouble() ?: return@forEach
             normalizeFareWithoutDecimal(raw)
         }
-    }.filterNotNull()
-        .filter { it >= 1.0 }
-        .toList()
+        if (value != null && value >= 1.0) amounts.add(value)
+    }
+    Regex(
+        """($OCR_DIGIT{1,3})[.,]($OCR_DIGIT{2})\s*GBP\b|GBP\s*($OCR_DIGIT{1,3})[.,]($OCR_DIGIT{2})\b""",
+        RegexOption.IGNORE_CASE,
+    ).findAll(text).forEach { match ->
+        val whole = match.groupValues[1].ifEmpty { match.groupValues[3] }.fixOcrDigits()
+        val frac = match.groupValues[2].ifEmpty { match.groupValues[4] }.fixOcrDigits()
+        "$whole.$frac".toDoubleOrNull()?.takeIf { it >= 1.0 }?.let { amounts.add(it) }
+    }
+    return amounts
 }
 
 /** Best-effort fare from OCR — prefers main £ amount, then large standalone decimals (e.g. 42.47). */
@@ -502,7 +511,7 @@ fun extractDistance(text: String): List<String> {
     // Driver app often shows "(4.0 miles)" — older regex only matched "mi)" / "mi " and missed "miles".
     // Also tolerate OCR "nmi" / "mni".
     val distanceRegex =
-        "([0-9ilILoO]+(?:\\.[0-9ilILoO])?)\\s*(?:miles?\\b|n?mi\\s*\\)|n?mi\\)|mni\\b)".toRegex(RegexOption.IGNORE_CASE)
+        "([0-9ilILoO]+(?:[.,][0-9ilILoO])?)\\s*(?:miles?\\b|mil\\b|n?mi\\s*\\)|n?mi\\)|mni\\b)".toRegex(RegexOption.IGNORE_CASE)
 
     return distanceRegex.findAll(text)
         .map { it.groupValues[1].replace('i', '1').replace('l', '1')
@@ -1808,8 +1817,11 @@ fun parseRideInfo(ocrTextRaw: String, visionText: Text? = null): RideRequest {
         ocrText.contains("confirm", ignoreCase = true) -> "confirm"
         ocrText.contains("Confirnm", ignoreCase = true) -> "confirm"
         Regex("\\bconf[i1l!|]rm\\b", RegexOption.IGNORE_CASE).containsMatchIn(ocrText) -> "confirm"
+        ocrText.contains("akceptuj", ignoreCase = true) -> "confirm"
+        ocrText.contains("accept", ignoreCase = true) -> "confirm"
         // OCR often splits or garbles "Match"; treat obvious variants as match.
         ocrText.contains("match", ignoreCase = true) -> "match"
+        ocrText.contains("dopasowanie", ignoreCase = true) -> "match"
         else -> ""
     }
 
@@ -1875,7 +1887,9 @@ class ScreenCaptureService : Service() {
     private var ocrSourceHeight: Int = 0
     private var ocrCropTopPx: Int = 0
 
-    private val acceptTapKeys = listOf("confirm", "match", "accept", "acept", "confirnm")
+    private val acceptTapKeys = listOf(
+        "confirm", "match", "accept", "acept", "confirnm", "dopasowanie", "akceptuj",
+    )
     private val rejectTapKeys = listOf("decline", "pass", "close", "dismiss", "no thanks", "not now")
 
 
@@ -2607,49 +2621,7 @@ class ScreenCaptureService : Service() {
             }
     }
 
-    private val acceptButtonKeys = listOf("confirm", "match")
-    private val closeButtonKeys = "x"
-    private val timeKeys = listOf("min (", "mins (", "min(", "mins(")
-    private val distanceKey = "mi)"
-    private val farePattern = "[$£]\\d+(\\.\\d{1,2})?".toRegex()
-
-    private fun isRideModal(text: String): Boolean {
-        val lower = text.lowercase()
-        val hasAcceptButton: Boolean = acceptButtonKeys.any { lower.contains(it) }
-        if (!hasAcceptButton) {
-            return false
-        }
-        // Batch / stacked offers often show "Match" without a visible "X" in the cropped region.
-        val hasCloseButton: Boolean =
-            lower.contains(closeButtonKeys) ||
-                lower.contains("close") ||
-                lower.contains("dismiss") ||
-                lower.contains("cancel")
-        // Accept "14 min (" or simply "12 min" / "12 mins" when miles appear (test apps, bad OCR).
-        val hasTimeKey: Boolean = timeKeys.any { lower.contains(it) } ||
-            Regex("\\b\\d{1,3}\\s*mins?\\b").containsMatchIn(lower)
-        // "(4.0 miles)" uses the word "miles", not the substring "mi)".
-        val hasDistanceKey: Boolean =
-            lower.contains(distanceKey) ||
-                Regex("\\bmiles?\\b").containsMatchIn(lower) ||
-                Regex("\\d+\\.?\\d*\\s*miles?\\b").containsMatchIn(lower)
-        val isPound = farePattern.containsMatchIn(lower)
-        val looksLikeMatchOffer = lower.contains("match")
-        val looksLikeConfirmOffer =
-            lower.contains("confirm") || lower.contains("confirnm")
-
-        // Original strict card: fare + time + distance + dismiss control.
-        val strictCard =
-            hasCloseButton && hasTimeKey && isPound && hasDistanceKey
-        // Stacked match UI: times + miles, often no £ in the same OCR crop.
-        val matchStackOffer =
-            looksLikeMatchOffer && hasTimeKey && hasDistanceKey
-        // Same idea for Confirm on mock/test screens (no £/X in crop).
-        val confirmStackOffer =
-            looksLikeConfirmOffer && hasTimeKey && hasDistanceKey
-
-        return strictCard || matchStackOffer || confirmStackOffer
-    }
+    private fun isRideModal(text: String): Boolean = isRideOfferCard(text)
 
     fun Rect.randomPoint(marginPercent: Double = 0.01): Pair<Int, Int> {
         val marginX = (width() * marginPercent).toInt()
@@ -2848,13 +2820,17 @@ class ScreenCaptureService : Service() {
                 val lower = t.lowercase()
                 val isCardAnchor =
                     t.contains('£') || t.contains('$') ||
+                        lower.contains("gbp") ||
                         lower.contains("confirm") || lower.contains("match") ||
+                        lower.contains("akceptuj") || lower.contains("dopasowanie") ||
                         lower.contains("uberx") || lower.contains("uberxl") ||
                         lower.contains("electric") || lower.contains("exclusive") ||
                         lower.contains("comfort") || lower.contains("priority") ||
                         Regex("""\d+\s*mins?\s*\(""", RegexOption.IGNORE_CASE).containsMatchIn(t) ||
+                        Regex("""\d+\s*minut""", RegexOption.IGNORE_CASE).containsMatchIn(t) ||
                         Regex("""\b[1-5]\.\d{1,2}\b""").containsMatchIn(t) &&
-                        (t.contains('★') || t.contains('*') || lower.contains("verified"))
+                        (t.contains('★') || t.contains('*') ||
+                            lower.contains("verified") || lower.contains("zweryfikowano"))
                 if (isCardAnchor) consider(bb)
             }
         }

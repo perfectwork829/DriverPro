@@ -50,4 +50,8 @@ local.properties
 *.ipr
 
 # Kotlin specific
-driverPRO.zip 
+driverPRO.zip
+
+# Local OCR tooling / frame dumps (not part of the Android app; >100MB binaries break GitHub push)
+_tools/
+_video_frames/
