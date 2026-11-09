@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.driver.pro.network.ApiService
+import com.driver.pro.saveScoreThresholds
+import kotlin.math.roundToInt
 import com.driver.pro.network.SessionManager
 import com.driver.pro.network.SettingField
 import com.driver.pro.network.UserSettingsResponse
@@ -221,6 +223,12 @@ fun SettingsScreen(
                     scoreReject = data.score?.reject?.toFloat() ?: 0f
                     scoreAccept = data.score?.accept?.toFloat() ?: 0f
                     scoreEnabled = data.score?.enabled ?: true
+                    saveScoreThresholds(
+                        context,
+                        scoreEnabled,
+                        scoreReject.roundToInt(),
+                        scoreAccept.roundToInt(),
+                    )
 
                     Log.d("settting resposne", scoreReject.toString())
                     Log.d("settting resposne", scoreAccept.toString())
@@ -250,6 +258,7 @@ fun SettingsScreen(
 
     // --- Helper to update API ---
     fun updateSettings() {
+        saveScoreThresholds(context, scoreEnabled, scoreReject.roundToInt(), scoreAccept.roundToInt())
         coroutineScope.launch {
             try {
                 val payload = UserSettingsResponse(

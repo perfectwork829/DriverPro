@@ -36,6 +36,8 @@ import android.provider.MediaStore
 import com.driver.pro.RideRequest
 import com.driver.pro.getToken
 import com.driver.pro.getOperatingCostPerMile
+import com.driver.pro.decideRideFromScore
+import com.driver.pro.getScoreThresholds
 import com.driver.pro.network.calculateRideRequest
 import com.driver.pro.network.logRideRequestPayload
 import com.driver.pro.network.rideRequestHttpBody
@@ -2544,12 +2546,11 @@ class ScreenCaptureService : Service() {
                         val restoredServer = promoteTruncatedRideScore(scored.final_score, ride)
                         val score = formulaScore ?: restoredServer ?: scored.final_score
                         val serverDecision = scored.acceptedOrRejected
-                        val decision = when {
-                            // Negative: banner only. Auto-reject taps triple-fire and magnify Uber.
-                            formulaScore != null && formulaScore < 0 -> 0
-                            serverDecision == 1 && formulaScore != null && formulaScore < 70 -> 0
-                            else -> serverDecision
-                        }
+                        val decision = decideRideFromScore(
+                            localScore = formulaScore,
+                            thresholds = getScoreThresholds(applicationContext),
+                            serverDecision = serverDecision,
+                        )
                         val scoredForUi = scored.copy(
                             final_score = score,
                             acceptedOrRejected = decision,

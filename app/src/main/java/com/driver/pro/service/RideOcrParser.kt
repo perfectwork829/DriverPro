@@ -24,7 +24,7 @@ internal fun normalizeUberOfferLayout(text: String): String {
     val bullet = "[•·∙●*°\\-–—]"
     out = out.replace(
         Regex(
-            """\b(\d{1,3})\s*(?:minut(?:a|y)?|minutes?|mins?)\s*$bullet?\s*(\d+[.,]\d{1,2})\s*(?:miles?|mil)\b""",
+            """\b(\d{1,3})\s*(?:minut(?:a|y)?|minutes?|mins?)\s*$bullet?\s*(\d+[.,]\d{1,2})\s*(?:miles?|mil|mi)\b""",
             RegexOption.IGNORE_CASE,
         ),
     ) { m ->

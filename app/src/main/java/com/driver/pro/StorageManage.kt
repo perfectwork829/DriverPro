@@ -67,6 +67,59 @@ fun persistSessionOperatingCost(context: Context?, apiPrice: Double?): Double {
     return display
 }
 
+/** Settings-screen SCORE band, cached so the capture service decides from the local score. */
+data class ScoreThresholds(val enabled: Boolean, val reject: Int, val accept: Int)
+
+private const val KEY_SCORE_ENABLED = "SCORE_FILTER_ENABLED"
+private const val KEY_SCORE_REJECT = "SCORE_FILTER_REJECT"
+private const val KEY_SCORE_ACCEPT = "SCORE_FILTER_ACCEPT"
+
+fun saveScoreThresholds(context: Context?, enabled: Boolean, reject: Int, accept: Int) {
+    if (context == null) return
+    context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit(commit = true) {
+        putBoolean(KEY_SCORE_ENABLED, enabled)
+        putInt(KEY_SCORE_REJECT, reject)
+        putInt(KEY_SCORE_ACCEPT, accept)
+    }
+}
+
+/** Null until the Settings screen has loaded or saved the band at least once. */
+fun getScoreThresholds(context: Context?): ScoreThresholds? {
+    if (context == null) return null
+    val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+    if (!prefs.contains(KEY_SCORE_ACCEPT)) return null
+    return ScoreThresholds(
+        enabled = prefs.getBoolean(KEY_SCORE_ENABLED, true),
+        reject = prefs.getInt(KEY_SCORE_REJECT, 0),
+        accept = prefs.getInt(KEY_SCORE_ACCEPT, 0),
+    )
+}
+
+/**
+ * Accept (1) / reject (-1) / undecided (0) for a scored offer.
+ *
+ * The server stores scores with the hundreds digit dropped (118 → 18), so its decision
+ * rejected good offers. When the SCORE filter is on, the local formula score decides,
+ * matching the Settings labels "Reject < X" and "Accept > Y".
+ */
+fun decideRideFromScore(
+    localScore: Int?,
+    thresholds: ScoreThresholds?,
+    serverDecision: Int,
+): Int {
+    if (localScore != null && localScore < 0) return 0 // banner only; avoid triple-fire dismiss taps
+    if (localScore != null && thresholds != null && thresholds.enabled) {
+        return when {
+            localScore > thresholds.accept -> 1
+            localScore < thresholds.reject -> -1
+            else -> 0
+        }
+    }
+    // No local band: never auto-accept a weak local score on the server's word alone.
+    if (serverDecision == 1 && localScore != null && localScore < 70) return 0
+    return serverDecision
+}
+
 fun saveOperatingCostPerMile(context: Context?, pounds: Double) {
     if (context == null) return
     val clamped = pounds.coerceIn(0.0, 9.99)
@@ -180,6 +233,8 @@ fun mergeRideHistory(local: List<RideRequest>, fromApi: List<RideRequest>): List
                 ocr_image_uri = r.ocr_image_uri.ifBlank { existing.ocr_image_uri },
                 created_at = existing.created_at.ifBlank { r.created_at },
                 final_score = preferDisplayedScore(existing.final_score, r.final_score),
+                // On-device decision used the real score; the server's used the truncated one.
+                acceptedOrRejected = existing.acceptedOrRejected,
                 cost_per_mile = existing.cost_per_mile ?: r.cost_per_mile,
                 price_per_mile = existing.price_per_mile ?: r.price_per_mile,
             )
