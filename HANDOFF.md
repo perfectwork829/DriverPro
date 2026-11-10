@@ -1,9 +1,10 @@
 # Handoff — I drive smart (driverPRO)
 
-For a **new laptop / new Cursor account**. Copy or clone this whole folder, then open it as the workspace. Cursor should load `AGENTS.md`, `.cursor/rules/driverpro.mdc`, and this file.
+For a **new laptop / new Cursor or Claude Code session**. Clone or copy this whole folder, then open it as the workspace. Read `AGENTS.md` (hard rules), `.cursor/rules/driverpro.mdc`, and this file.
 
-**Remote:** `https://github.com/perfectwork829/DriverPro.git`  
+**Remote:** `https://github.com/perfectwork829/DriverPro.git`
 **Branch:** `main`
+**Updated:** 10 Nov 2026
 
 ---
 
@@ -11,79 +12,104 @@ For a **new laptop / new Cursor account**. Copy or clone this whole folder, then
 
 | What | Value |
 |---|---|
-| Last **pushed** commit | `723180a` `fix: fixed 10.27 feedback` — **1.66** |
-| **Local uncommitted** (this machine, 1 Nov 2026) | **1.69** — customer History hides OCR-debug / raw OCR. Also includes 1.67 Start scroll and 1.68 new Uber layout. |
+| `app/build.gradle.kts` (working copy) | `versionCode = 71`, `versionName = "1.71"` |
+| Last **pushed** commit | `e4005d5` `fix: fixed 11.08 feedback`, which is **1.70** (`main` is level with `origin/main`) |
+| **Local uncommitted** (10 Nov 2026) | **1.71**: Score slider in steps of 1, price per mile in 0.1 steps, unscored orders shown in History |
 
-If you only `git clone` / `git pull`, you get **1.66**. You will **not** have the 1.67 Start-screen fix until you copy the two dirty files or commit/push them from the old laptop.
+A `git clone` or `git pull` gives you **1.70**. You get **1.71** only after the files below are committed and pushed, or copied from the old machine.
 
-Uncommitted files (must copy if you do not commit):
+### Uncommitted files (commit, or copy to the new machine)
 
-- `app/build.gradle.kts` (`versionCode = 67`, `versionName = "1.67"`)
-- `app/src/main/java/com/driver/pro/ui/screens/StartScreen.kt` (scrollable column, 24.dp padding, 28.dp spacers)
+| File | Change |
+|---|---|
+| `app/build.gradle.kts` | 70 → 71, 1.70 → 1.71 |
+| `app/src/main/java/com/driver/pro/ui/components/ScoreRangeSlider.kt` | `labelDecimals` param, `formatSliderLabel`, snapped value rounded to 2 dp |
+| `app/src/main/java/com/driver/pro/ui/screens/SettingsScreen.kt` | SCORE slider `valueStep = 1f` (was 5). PRICE PER MILE `valueStep = 0.1f, labelDecimals = 1` |
+| `app/src/main/java/com/driver/pro/StorageManage.kt` | `isCustomerVisibleRide`, `customerHistoryRides` |
+| `app/src/main/java/com/driver/pro/ui/screens/HistoryScreen.kt` | uses `customerHistoryRides(...)` instead of hiding every OCR-debug row |
+| `app/src/main/java/com/driver/pro/ui/components/RideRequestCard.kt` | `formatHistoryPriceRate`. Unscored cards hide the Pickup/Drop/Score lines |
+| `app/src/main/java/com/driver/pro/service/ScreenCaptureService.kt` | `saveDebugOcrAttempt` saves `created_at` as `yyyy-MM-dd HH:mm:ss` |
+| `AGENTS.md` | History rule updated for unscored cards (client, 9 Nov 2026) |
+| `HANDOFF.md` | this file |
+| `app/src/test/java/com/driver/pro/ui/components/ScoreRangeSliderTest.kt` | **new (untracked)**: `ScoreRangeSliderTest` + `UnscoredHistoryCardTest` |
 
-Also copy this handoff set if they are not on remote yet:
-
-- `AGENTS.md`
-- `HANDOFF.md`
-- `.cursor/rules/driverpro.mdc`
-- `CLIENT_STORE_ACCOUNTS_GUIDE.md` (Play + App Store beginner guide)
+Unit tests on the 1.71 working copy: **483 pass** (`./gradlew.bat :app:testDebugUnitTest --offline`). Nothing has been tried on a phone yet, and no 1.71 APK has been built.
 
 ---
 
 ## What this app is
 
-Android (Kotlin, Jetpack Compose, Gradle 8.13, AGP 8.13.1). Drivers capture Uber Driver Match/Confirm cards (MediaProjection + Accessibility), OCR the offer, score it locally with the client formula, overlay the score, save History, POST to `idrivesmart.co.uk`.
+Android (Kotlin, Jetpack Compose, Gradle 8.13, AGP 8.13.1, SDK 36, JDK 17). The app captures Uber Driver Match/Confirm cards (MediaProjection + Accessibility), reads the offer with OCR (ML Kit then `RideOcrParser`), scores it locally with the client formula, overlays the score on the Uber card, saves it to History and POSTs `/api/ride-request/` to `idrivesmart.co.uk`.
 
-**There is no iPhone app in this repo.** Client wants Play **and** App Store later. Play can use this Android app. App Store needs a **new iOS project** plus a Mac and Apple certificates. Do not fake an IPA.
+**Android only. There is no iPhone/Xcode target in this repo and no IPA exists.** An App Store version would need a new iOS project, a Mac and Apple certificates. Never tell the client an IPA was built.
 
-Sideload APKs are still signed with the **debug keystore** (`app/build.gradle.kts`). Not Play-store signing.
+Sideload APKs are signed with the **debug keystore** (`app/build.gradle.kts`), not Play signing. Build an APK/AAB only when the owner asks.
 
 ---
 
 ## Product rules (do not regress)
 
-1. Start-screen operating cost must change the formula score (persist on load; `persistSessionOperatingCost`).
-2. History score = local `displayedFormulaScore`, not the API remainder.
-3. Overlay rates = Uber **gross** £/h and £/mi. Formula net is History tape (hidden from UI) and the integer score.
-4. Formula (17 Oct 2026 email):  
-   `net £/h = [Y − (C+D+A)×cost] × 60 / (E+F+B+4)`  
-   then `ceil(£/h / 0.50)` + rating points − pickup hour + drop hour.  
-   Buffer **4** minutes. A/B from **drop** KODY row only. London-start only. Do not invent return miles.
-5. Hour points: `KodyTable.kt` (2,832 outward codes, X1–X24). Import: `python scripts/import_kody.py` from `C:\Users\Admin\Downloads\KODY.xlsx`.
-6. Event uplifts: `kodyEventUplifts` extra on base table. **Empty** until the client sends event postcodes/hours.
-7. History title is `History` (no version). Do **not** show `formatFormulaBreakdown`, **Show raw OCR**, **Copy raw OCR**, or OCR-debug cards. Score number and Uber £/h £/mi stay.
-8. Licence list: London only (`londonLicenceCities`). Label `London`, not `London (city)`.
-9. Start copy:  
-   - `In which city do you hold a license?`  
-   - `How much does it cost you to drive 1 mile?`  
-   Welcome is still `WELCOME {username}`.
-10. User-facing: Uber → “driver app”; app name **I drive smart**.
+1. The Start-screen cost per mile is the operating cost in the formula. It is saved on load (`persistSessionOperatingCost`).
+2. Formula (client, 17 Oct 2026):
+   - `net £/h = [Y − (C+D+A)×cost] × 60 / (E+F+B+4)`
+   - band `ceil(£/h / 0.50)`
+   - plus rating points (4.51–5.00 → 10 … 1.00–1.50 → 3)
+   - minus pickup postcode hour points, plus drop postcode hour points
+3. Buffer is **4** minutes. **A/B** come from the **drop** KODY row only, and only for London-start jobs. Do not invent return miles. Intra-London is 0 unless the sheet has values.
+4. Hour table: `KodyTable.kt`, imported from `C:\Users\Admin\Downloads\KODY.xlsx` via `python scripts/import_kody.py`. Event uplifts (`kodyEventUplifts`) are **empty** until the client sends event postcodes and hours.
+5. The overlay **£/h** and **£/mi** are Uber **gross**, not net of cost.
+6. The History score is the local `displayedFormulaScore`, not the API value. The server drops the hundreds digit (118 → 18).
+7. **Accept/reject decision (1.70):** made locally by `decideRideFromScore(localScore, getScoreThresholds(), serverDecision)`. With the Score filter on, the job is accepted if score > accept, rejected if score < reject, and left alone otherwise. With the filter off it falls back to the server decision, but a server "accept" with a local score under 70 is ignored. Thresholds are cached in `app_prefs` by `SettingsScreen` (`saveScoreThresholds`).
+8. **History:**
+   - Title is `History`, with no version number.
+   - Never show the formula tape (`43+10 -8 +8 = 53`), **Show raw OCR** or **Copy raw OCR**.
+   - Scored cards show ID, time, price/rating, Pickup, Drop, Score + decision, and Uber £/h £/mi.
+   - **Unscored orders** (Uber glitch, missing postcode) show as a plain card: ID, time, price/rating, £/h £/mi. They have no Pickup/Drop/Score lines and are not marked invalid (client, 9 Nov 2026).
+   - Hidden: rows with no fare, rows where the "price" was really the passenger rating, and an unscored row when the same fare was scored within 5 minutes.
+9. **Settings sliders:** Score moves in steps of **1**. Price per mile moves in **£0.10** steps, range 0–15, label to 1 decimal.
+10. Licence list: **London only** (`londonLicenceCities`). Label `London`, not `London (city)`.
+11. Start copy: `In which city do you hold a license?` / `How much does it cost you to drive 1 mile?`. The welcome stays `WELCOME {username}`.
+12. In user-facing text Uber is called the “driver app”, and the app name is **I drive smart**.
+13. Bump `versionCode` / `versionName` for each client-visible change.
 
 ---
 
-## Already done (Oct 2026)
+## Fixed since the last handoff (1.66 → 1.71)
 
-- Blue result overlay bar
-- Cost-per-mile actually used in scoring (was stuck at £0.50 at launch)
-- Full KODY hour + A/B table
-- History formula tape and `History (v1.62)` **hidden** (1.63)
-- Licence cities filtered to London, no “(city)” (1.64)
-- Licence question sentence case (1.65)
-- Cost question sentence case (1.66) — **heading only**; boxes still clipped on 1.66
-- **1.67 (local only):** Start screen scroll + reduced padding so £ digit boxes and `050 = £0.50` hint sit on screen above the bottom nav
-- **1.68 (local only):** Uber Nov 2026 offer layout — `12,70 GBP`, `18 minut • 7.2 mil`, Dopasowanie / Akceptuj (Polish + English bullet cards)
-- **1.69 (local only):** Customer History hides OCR-debug rows and Show/Copy raw OCR
+| Version | Commit | What |
+|---|---|---|
+| 1.67 | `531f799` | Start screen scrolls with less padding, so the £ digit boxes and the `050 = £0.50` hint sit above the bottom nav |
+| 1.68 | `b54e0ec` | Start screen cleanup |
+| 1.69 | `65fcfbf` (+ `5761fba` gradle fix) | New Uber Nov 2026 offer layout (`12,70 GBP`, `18 minut • 7.2 mil`, Polish/English bullet cards). History hides OCR-debug rows and Show/Copy raw OCR. Added `ARCHITECTURE.md`, `AGENTS.md`, `HANDOFF.md` |
+| 1.70 | `e4005d5` | **Good orders were auto-rejected.** The server compared the truncated score (118 → 18), so the decision is now made locally (rule 7). The parser accepts `mi` as well as `mil`/`miles`. `Nov8ClientBatchTest` covers the client's 8 Nov samples |
+| 1.71 | uncommitted | Score slider steps of 1 (the client said 5 was wrong). Price per mile back to 0.1 steps. Unscored orders back in History as plain cards. Review fixes: no duplicate unscored/scored card for one offer, a reliable timestamp on unscored rows, and a price misread from the rating no longer shown |
+
+Note: the client's "old bugs came back" report on 8 Nov came from a phone still running **1.68 or older**. Make sure the client installs the newest APK before re-testing.
 
 ---
 
-## Open / next
+## Still open / unfinished
 
-1. **Ship 1.67** — commit/push if the user asks, then assemble APK if they ask. Confirm on device that £ boxes show under the cost question.
-2. History raw OCR / OCR-debug cards — **hidden** in 1.69.
-3. Event-hour overlay UI — not built; hook exists.
-4. Google Play / App Store — client guide is `CLIENT_STORE_ACCOUNTS_GUIDE.md`. No production keystore, no AAB uploaded, no Apple app. Wait for Play invite + Apple enrolment. New Play accounts usually need closed testing before production.
-5. **iOS** — new project; not this Gradle app.
-6. Play policy risk: MediaProjection + Accessibility + overlay on Uber. Client must accept rejection risk (email is enough; no Google waiver PDF).
+1. **Ship 1.71.** Commit/push and build the APK only when the owner asks, then test on a phone:
+   - Score slider moves by 1
+   - Price per mile shows e.g. £2.1
+   - Unscored cards appear without Pickup/Drop/Score
+2. **Not verified:** whether the server keeps price-per-mile settings as decimals. If it stores whole numbers, £2.1 comes back as £2 after reload. Check `getUserSettings` after saving 2.1.
+3. **Event-hour overlay UI** is not built. The `kodyEventUplifts` hook exists and is empty.
+4. **Google Play / App Store:**
+   - There is a client guide in `CLIENT_STORE_ACCOUNTS_GUIDE.md`.
+   - No production keystore, no AAB uploaded, no iOS app.
+   - New Play accounts usually need closed testing first.
+   - Play policy risk: MediaProjection + Accessibility + overlay on Uber.
+5. **Tracked files that look sensitive or temporary:** `driver_key`, `driver_key1`, `keystore`, `tmp_id2488.txt` and `tmp_parse.kts` are in git. The owner has not decided whether to remove them from the repo or rotate keys. Do not delete without asking.
+
+## Known bugs / client feedback not done
+
+- **Slough job (8 Nov):** minutes/distance wrong, so the points were wrong. The OCR text itself says "4 mi" where the real trip was 2.1, so it can't be fixed from the text alone. Needs a clearer screenshot or recording.
+- **New Uber layout on the client's iPhone (8 Nov):** Uber appears to be A/B testing. This app only runs on Android. Parser support for the Nov layout is in 1.69, but each new variant needs samples.
+- **Electric £15.49 drop shown as "London" (8 Nov):** wrong drop postcode. Not confirmed fixed. `RideOcrParser.kt` (around line 498–505) can still copy the pickup postcode into drop when drop is blank.
+- **Client video** `C:\Users\Admin\Downloads\VID-20261109-WA0016.mp4` (9 Nov) has not been reviewed.
+- **Postcode map W / SW screens showing "—":** never clarified with the client.
 
 ---
 
@@ -93,35 +119,43 @@ Sideload APKs are still signed with the **debug keystore** (`app/build.gradle.kt
 |---|---|
 | Version | `app/build.gradle.kts` |
 | Formula | `app/src/main/java/com/driver/pro/utils/ScoreFormula.kt` |
-| KODY table | `app/src/main/java/com/driver/pro/utils/KodyTable.kt` |
-| KODY import | `scripts/import_kody.py` |
-| Overlay rates | `app/src/main/java/com/driver/pro/utils/OfferEarnings.kt` |
-| Return A/B | `app/src/main/java/com/driver/pro/utils/ReturnToZone.kt` |
-| Capture / OCR | `service/ScreenCaptureService.kt`, `RideOcrParser.kt` |
+| KODY table / import | `utils/KodyTable.kt`, `scripts/import_kody.py` |
+| Overlay rates | `utils/OfferEarnings.kt` |
+| Return A/B | `utils/ReturnToZone.kt` |
+| Capture / OCR | `service/ScreenCaptureService.kt`, `service/RideOcrParser.kt` |
 | Overlay on Uber | `service/DriverAppAccessibilityService.kt` |
+| Accept/reject + History filters | `StorageManage.kt` (`decideRideFromScore`, `customerHistoryRides`) |
+| Settings / sliders | `ui/screens/SettingsScreen.kt`, `ui/components/ScoreRangeSlider.kt` |
 | Start / cost | `ui/screens/StartScreen.kt`, `viewmodels/StartScreenViewModel.kt` |
 | History | `ui/screens/HistoryScreen.kt`, `ui/components/RideRequestCard.kt` |
 | Cities | `utils/LicenceCity.kt` |
 | API | `network/ApiClient.kt` |
-| Client store guide | `CLIENT_STORE_ACCOUNTS_GUIDE.md` |
+| Architecture notes | `ARCHITECTURE.md` |
 
-Tests: `app/src/test/java/com/driver/pro/utils/ScoreFormulaTest.kt`, `OfferEarningsTest.kt`, `ReturnToZoneTest.kt`, `LicenceCityTest.kt`. Gradle wrapper download can hang; a local dist may exist under `%USERPROFILE%\.gradle\wrapper\dists\gradle-8.13-bin\`.
+Tests are under `app/src/test/java/com/driver/pro/` (`utils/`, `service/` client OCR batches, `network/`, `ui/components/`). Run them with:
+
+```bash
+./gradlew.bat :app:testDebugUnitTest --offline
+```
+
+On Windows, run Gradle from Git Bash and redirect output to a log; PowerShell treats Gradle's stderr as an error. Gradle wrapper downloads can hang, but a local dist may exist under `%USERPROFILE%\.gradle\wrapper\dists\gradle-8.13-bin\`.
 
 ---
 
 ## How to continue on the new machine
 
-1. Install Android Studio / SDK 36, JDK 17, clone the GitHub repo.
-2. Copy **uncommitted 1.67 files** from the old laptop (or commit and push from the old laptop first — only if the owner asks).
-3. Open the folder in Cursor. Do not ignore `HANDOFF.md`.
-4. Do not rebuild iOS. For a client install, `assembleRelease` only when asked; APK lands in `app/build/outputs/apk/release/`.
-5. Keep bumping version on client-visible edits.
+1. Install Android Studio / SDK 36 and JDK 17, then clone the repo.
+2. If 1.71 isn't pushed yet, copy the uncommitted files listed above from the old machine. Alternatively, the owner can commit and push from the old machine.
+3. Run the unit tests and expect them all to pass.
+4. Don't build iOS. For a client install, run `assembleRelease` only when asked; the APK is written to `app/build/outputs/apk/release/`.
+5. Keep bumping the version on client-visible edits.
 
 ---
 
 ## What not to tell the client
 
-- That an IPA exists
-- That History still shows the formula (it does not, from 1.63)
-- That cost-per-mile is unused (it is used)
-- That Play/App Store listing is already live
+- That an IPA or iPhone build exists
+- That History still shows the formula (it hasn't since 1.63)
+- That cost per mile is unused (it is used)
+- That a Play/App Store listing is live
+- That an OCR fix is a scoring fix, or the reverse

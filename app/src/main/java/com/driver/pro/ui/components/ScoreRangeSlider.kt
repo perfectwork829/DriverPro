@@ -49,6 +49,8 @@ fun ScoreRangeSlider(
     onChangeFinished: () -> Unit,
     /** Discrete step; 5 = every 5 points on the 0–150 score scale. */
     valueStep: Float = 0f,
+    /** Decimals in the Reject/Accept labels; 1 for £/mile (e.g. £ 2.1). */
+    labelDecimals: Int = 0,
 ) {
     val thumbColors = SliderDefaults.colors(
         activeTrackColor = Color.Transparent,
@@ -137,16 +139,25 @@ fun ScoreRangeSlider(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text("Reject < $unit ${initialStart.roundToInt()}", fontSize = HEADER_FONT_SIZE)
-            Text("Accept > $unit ${initialEnd.roundToInt()}", fontSize = HEADER_FONT_SIZE)
+            Text("Reject < $unit ${formatSliderLabel(initialStart, labelDecimals)}", fontSize = HEADER_FONT_SIZE)
+            Text("Accept > $unit ${formatSliderLabel(initialEnd, labelDecimals)}", fontSize = HEADER_FONT_SIZE)
         }
     }
 }
 
+internal fun formatSliderLabel(value: Float, decimals: Int): String =
+    if (decimals <= 0) {
+        value.roundToInt().toString()
+    } else {
+        String.format(java.util.Locale.UK, "%.${decimals}f", value)
+    }
+
 internal fun snapSliderValue(value: Float, min: Float, max: Float, step: Float): Float {
     if (step <= 0f) return value.coerceIn(min, max)
     val snapped = min + ((value - min) / step).roundToInt() * step
-    return snapped.coerceIn(min, max)
+    // 0.1 steps in Float drift (2.1000001); keep the value the label and API see clean.
+    val clean = kotlin.math.round(snapped * 100f) / 100f
+    return clean.coerceIn(min, max)
 }
 
 internal fun sliderSteps(min: Float, max: Float, step: Float): Int {

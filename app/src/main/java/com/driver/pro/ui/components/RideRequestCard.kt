@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.driver.pro.RideRequest
+import com.driver.pro.isOcrDebugRide
 import com.driver.pro.utils.displayedFormulaScore
 import com.driver.pro.utils.formatOfferEarningsLine
 
@@ -43,6 +44,13 @@ fun showResult(acceptedOrRejected: Int): String {
     }
 }
 
+/** `Price/Rate: 6.77(4.40)`; rating omitted when OCR never read it. */
+internal fun formatHistoryPriceRate(price: Double, rating: Double): String {
+    val p = String.format(java.util.Locale.US, "%.2f", price)
+    if (rating <= 0.0) return "Price: $p"
+    return "Price/Rate: $p(${String.format(java.util.Locale.US, "%.2f", rating)})"
+}
+
 /** One decimal so 8.4 stays 8.4 and 3.4000000000000004 is not shown. */
 private fun formatHistoryMiles(miles: Double?): String {
     if (miles == null) return ""
@@ -65,29 +73,33 @@ fun RideRequestCard(rideRequest: RideRequest) {
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                "Price/Rate: ${String.format(java.util.Locale.US, "%.2f", rideRequest.price)}(${String.format(java.util.Locale.US, "%.2f", rideRequest.rating)})",
+                formatHistoryPriceRate(rideRequest.price, rideRequest.rating),
                 fontSize = 18.sp,
                 style = MaterialTheme.typography.bodyLarge,
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                "Pickup: ${rideRequest.pickup_time_minutes}(${formatHistoryMiles(rideRequest.pickup_distance_value)})(${rideRequest.pickup_address_postcode})",
-                fontSize = 14.sp,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                "Drop: ${rideRequest.trip_time_minutes}(${formatHistoryMiles(rideRequest.trip_distance_value)})(${rideRequest.dropoff_address_postcode})",
-                fontSize = 14.sp,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            val shownScore = displayedFormulaScore(rideRequest) ?: rideRequest.final_score
-            Text(
-                "Score: ${shownScore ?: "N/A"} - ${showResult(rideRequest.acceptedOrRejected)}",
-                fontSize = 14.sp,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            // Unscored order (Uber glitch / missing postcode): no Pickup, Drop or Score lines
+            // (client 9 Nov 2026). Price, rating and Uber £/h £/mi stay.
+            if (!isOcrDebugRide(rideRequest)) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Pickup: ${rideRequest.pickup_time_minutes}(${formatHistoryMiles(rideRequest.pickup_distance_value)})(${rideRequest.pickup_address_postcode})",
+                    fontSize = 14.sp,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Drop: ${rideRequest.trip_time_minutes}(${formatHistoryMiles(rideRequest.trip_distance_value)})(${rideRequest.dropoff_address_postcode})",
+                    fontSize = 14.sp,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                val shownScore = displayedFormulaScore(rideRequest) ?: rideRequest.final_score
+                Text(
+                    "Score: ${shownScore ?: "N/A"} - ${showResult(rideRequest.acceptedOrRejected)}",
+                    fontSize = 14.sp,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             formatOfferEarningsLine(rideRequest)?.let { earnings ->
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(

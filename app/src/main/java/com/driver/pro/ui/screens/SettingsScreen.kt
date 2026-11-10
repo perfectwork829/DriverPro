@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.driver.pro.network.ApiService
+import com.driver.pro.saveScoreThresholds
+import kotlin.math.roundToInt
 import com.driver.pro.network.SessionManager
 import com.driver.pro.network.SettingField
 import com.driver.pro.network.UserSettingsResponse
@@ -221,6 +223,12 @@ fun SettingsScreen(
                     scoreReject = data.score?.reject?.toFloat() ?: 0f
                     scoreAccept = data.score?.accept?.toFloat() ?: 0f
                     scoreEnabled = data.score?.enabled ?: true
+                    saveScoreThresholds(
+                        context,
+                        scoreEnabled,
+                        scoreReject.roundToInt(),
+                        scoreAccept.roundToInt(),
+                    )
 
                     Log.d("settting resposne", scoreReject.toString())
                     Log.d("settting resposne", scoreAccept.toString())
@@ -250,6 +258,7 @@ fun SettingsScreen(
 
     // --- Helper to update API ---
     fun updateSettings() {
+        saveScoreThresholds(context, scoreEnabled, scoreReject.roundToInt(), scoreAccept.roundToInt())
         coroutineScope.launch {
             try {
                 val payload = UserSettingsResponse(
@@ -318,7 +327,7 @@ fun SettingsScreen(
             onEnabledChange = { scoreEnabled = it; updateSettings() },
             onValueChange = { start, end -> scoreReject = start; scoreAccept = end; },
             onChangeFinished = {updateSettings()},
-            valueStep = 5f,
+            valueStep = 1f,
         )
 
         // Price Slider
@@ -357,7 +366,9 @@ fun SettingsScreen(
             enabled = priceMileEnabled,
             onEnabledChange = { priceMileEnabled = it; updateSettings() },
             onValueChange = { start, end -> priceMileReject = start; priceMileAccept = end; },
-            onChangeFinished = {updateSettings()}
+            onChangeFinished = {updateSettings()},
+            valueStep = 0.1f,
+            labelDecimals = 1,
         )
         Box(
             modifier = Modifier.fillMaxWidth(),
