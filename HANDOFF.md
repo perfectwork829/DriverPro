@@ -12,28 +12,29 @@ For a **new laptop / new Cursor or Claude Code session**. Clone or copy this who
 
 | What | Value |
 |---|---|
-| `app/build.gradle.kts` (working copy) | `versionCode = 71`, `versionName = "1.71"` |
+| `app/build.gradle.kts` (working copy) | `versionCode = 73`, `versionName = "1.73"` |
 | Last **pushed** commit | `e4005d5` `fix: fixed 11.08 feedback`, which is **1.70** (`main` is level with `origin/main`) |
-| **Local uncommitted** (10 Nov 2026) | **1.71**: Score slider in steps of 1, price per mile in 0.1 steps, unscored orders shown in History |
+| **Local uncommitted** (10 Nov 2026) | **1.72**: 1.71 slider and History changes, plus return miles on zone-edge pickups (SL2 → OX26) |
 
-A `git clone` or `git pull` gives you **1.70**. You get **1.71** only after the files below are committed and pushed, or copied from the old machine.
+A `git clone` or `git pull` gives you **1.70**. You get **1.72** only after the files below are committed and pushed, or copied from the old machine.
 
 ### Uncommitted files (commit, or copy to the new machine)
 
 | File | Change |
 |---|---|
-| `app/build.gradle.kts` | 70 → 71, 1.70 → 1.71 |
+| `app/build.gradle.kts` | 70 → 72, 1.70 → 1.72 |
 | `app/src/main/java/com/driver/pro/ui/components/ScoreRangeSlider.kt` | `labelDecimals` param, `formatSliderLabel`, snapped value rounded to 2 dp |
 | `app/src/main/java/com/driver/pro/ui/screens/SettingsScreen.kt` | SCORE slider `valueStep = 1f` (was 5). PRICE PER MILE `valueStep = 0.1f, labelDecimals = 1` |
 | `app/src/main/java/com/driver/pro/StorageManage.kt` | `isCustomerVisibleRide`, `customerHistoryRides` |
 | `app/src/main/java/com/driver/pro/ui/screens/HistoryScreen.kt` | uses `customerHistoryRides(...)` instead of hiding every OCR-debug row |
 | `app/src/main/java/com/driver/pro/ui/components/RideRequestCard.kt` | `formatHistoryPriceRate`. Unscored cards hide the Pickup/Drop/Score lines |
 | `app/src/main/java/com/driver/pro/service/ScreenCaptureService.kt` | `saveDebugOcrAttempt` saves `created_at` as `yyyy-MM-dd HH:mm:ss` |
-| `AGENTS.md` | History rule updated for unscored cards (client, 9 Nov 2026) |
+| `app/src/main/java/com/driver/pro/utils/ReturnToZone.kt` | Zone start is a pickup whose own return is 0, so SL2 → OX26 uses A=32, B=44 |
+| `AGENTS.md` | History rule updated for unscored cards (client, 9 Nov 2026). Zone-start rule for A/B |
 | `HANDOFF.md` | this file |
 | `app/src/test/java/com/driver/pro/ui/components/ScoreRangeSliderTest.kt` | **new (untracked)**: `ScoreRangeSliderTest` + `UnscoredHistoryCardTest` |
 
-Unit tests on the 1.71 working copy: **483 pass** (`./gradlew.bat :app:testDebugUnitTest --offline`). Nothing has been tried on a phone yet, and no 1.71 APK has been built.
+Nothing has been tried on a phone yet, and no 1.72 APK has been built.
 
 ---
 
@@ -55,7 +56,7 @@ Sideload APKs are signed with the **debug keystore** (`app/build.gradle.kts`), n
    - band `ceil(£/h / 0.50)`
    - plus rating points (4.51–5.00 → 10 … 1.00–1.50 → 3)
    - minus pickup postcode hour points, plus drop postcode hour points
-3. Buffer is **4** minutes. **A/B** come from the **drop** KODY row only, and only for London-start jobs. Do not invent return miles. Intra-London is 0 unless the sheet has values.
+3. Buffer is **4** minutes. **A/B** come from the **drop** KODY row only, and only when the pickup is still inside the working zone (that pickup row's own return is 0: every TfL district, plus SL, SG and WD). A pickup that already has return miles is not a zone start. Do not invent return miles. Intra-zone is 0 unless the sheet has values.
 4. Hour table: `KodyTable.kt`, imported from `C:\Users\Admin\Downloads\KODY.xlsx` via `python scripts/import_kody.py`. Event uplifts (`kodyEventUplifts`) are **empty** until the client sends event postcodes and hours.
 5. The overlay **£/h** and **£/mi** are Uber **gross**, not net of cost.
 6. The History score is the local `displayedFormulaScore`, not the API value. The server drops the hundreds digit (118 → 18).
@@ -74,7 +75,7 @@ Sideload APKs are signed with the **debug keystore** (`app/build.gradle.kts`), n
 
 ---
 
-## Fixed since the last handoff (1.66 → 1.71)
+## Fixed since the last handoff (1.66 → 1.72)
 
 | Version | Commit | What |
 |---|---|---|
@@ -83,6 +84,7 @@ Sideload APKs are signed with the **debug keystore** (`app/build.gradle.kts`), n
 | 1.69 | `65fcfbf` (+ `5761fba` gradle fix) | New Uber Nov 2026 offer layout (`12,70 GBP`, `18 minut • 7.2 mil`, Polish/English bullet cards). History hides OCR-debug rows and Show/Copy raw OCR. Added `ARCHITECTURE.md`, `AGENTS.md`, `HANDOFF.md` |
 | 1.70 | `e4005d5` | **Good orders were auto-rejected.** The server compared the truncated score (118 → 18), so the decision is now made locally (rule 7). The parser accepts `mi` as well as `mil`/`miles`. `Nov8ClientBatchTest` covers the client's 8 Nov samples |
 | 1.71 | uncommitted | Score slider steps of 1 (the client said 5 was wrong). Price per mile back to 0.1 steps. Unscored orders back in History as plain cards. Review fixes: no duplicate unscored/scored card for one offer, a reliable timestamp on unscored rows, and a price misread from the rating no longer shown |
+| 1.72 | uncommitted | Zone-edge pickups (SL, SG, WD — sheet return 0) now include the drop's return miles and minutes. ID-6068 SL2 → OX26 was 149 with the return left out; with A=32, B=44 at £0.30/mi the score is 69. A start that already has return miles (SN2) still adds nothing |
 
 Note: the client's "old bugs came back" report on 8 Nov came from a phone still running **1.68 or older**. Make sure the client installs the newest APK before re-testing.
 
@@ -90,10 +92,11 @@ Note: the client's "old bugs came back" report on 8 Nov came from a phone still 
 
 ## Still open / unfinished
 
-1. **Ship 1.71.** Commit/push and build the APK only when the owner asks, then test on a phone:
+1. **Ship 1.72.** Commit/push and build the APK only when the owner asks, then test on a phone:
    - Score slider moves by 1
    - Price per mile shows e.g. £2.1
    - Unscored cards appear without Pickup/Drop/Score
+   - SL2 → OX26 includes the 32 miles / 44 minutes return (score 69 at £0.30/mi, not 149)
 2. **Not verified:** whether the server keeps price-per-mile settings as decimals. If it stores whole numbers, £2.1 comes back as £2 after reload. Check `getUserSettings` after saving 2.1.
 3. **Event-hour overlay UI** is not built. The `kodyEventUplifts` hook exists and is empty.
 4. **Google Play / App Store:**
@@ -145,7 +148,7 @@ On Windows, run Gradle from Git Bash and redirect output to a log; PowerShell tr
 ## How to continue on the new machine
 
 1. Install Android Studio / SDK 36 and JDK 17, then clone the repo.
-2. If 1.71 isn't pushed yet, copy the uncommitted files listed above from the old machine. Alternatively, the owner can commit and push from the old machine.
+2. If 1.72 isn't pushed yet, copy the uncommitted files listed above from the old machine. Alternatively, the owner can commit and push from the old machine.
 3. Run the unit tests and expect them all to pass.
 4. Don't build iOS. For a client install, run `assembleRelease` only when asked; the APK is written to `app/build/outputs/apk/release/`.
 5. Keep bumping the version on client-visible edits.

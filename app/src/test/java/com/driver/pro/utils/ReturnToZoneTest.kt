@@ -63,6 +63,22 @@ class ReturnToZoneTest {
     }
 
     @Test
+    fun sl2_to_ox26_counts_as_a_zone_start_and_adds_the_drop_return() {
+        assertFalse(isTflLondonPostcode("SL2"))
+        assertTrue(isLondonStartPostcode("SL2"))
+        assertFalse(isLondonStartPostcode("OX26"))
+        assertFalse(isLondonStartPostcode("SN2"))
+        val ret = resolveReturnToZone("SL2", "OX26", 40.6, 44)
+        assertEquals(32.0, ret.miles, 0.001)
+        assertEquals(44, ret.minutes)
+    }
+
+    @Test
+    fun pickup_already_outside_the_zone_does_not_add_the_drop_return() {
+        assertEquals(ReturnToZone.NONE, resolveReturnToZone("SN2", "OX26", 40.0, 50))
+    }
+
+    @Test
     fun tn16_return_is_five_miles_and_five_minutes() {
         val ret = resolveReturnToZone("W11", "TN16", 23.9, 117)
         assertEquals(5.0, ret.miles, 0.001)

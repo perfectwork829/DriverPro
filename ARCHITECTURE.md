@@ -59,7 +59,7 @@ Client-heavy Android app: drivers capture Uber Driver Match/Confirm cards, OCR t
 4. Formula (17 Oct 2026):  
    `net £/h = [Y − (C+D+A)×cost] × 60 / (E+F+B+4)`  
    then `ceil(£/h / 0.50)` + rating points − pickup hour + drop hour.  
-   Buffer **4** minutes. **A/B** from drop postcode **KODY** row only. London-start only.
+   Buffer **4** minutes. **A/B** from drop postcode **KODY** row only, and only when the pickup row's own return is 0 (TfL, plus SL, SG, WD).
 5. History must **not** show formula tape, version subtitle, or raw OCR / OCR-debug cards.
 6. Licence list: **London only**, label `London` (not `London (city)`).
 

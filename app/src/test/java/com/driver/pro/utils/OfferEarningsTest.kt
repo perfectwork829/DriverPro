@@ -271,6 +271,24 @@ class OfferEarningsTest {
     }
 
     @Test
+    fun sl2_ox26_includes_return_so_score_is_69_not_149() {
+        val job = ride(72.41, 2, 44, 0.3, 40.6).copy(
+            id = 6068,
+            rating = 4.88,
+            pickup_address_postcode = "SL2",
+            dropoff_address_postcode = "OX26",
+            created_at = "2026-11-10 19:08:00",
+            cost_per_mile = 0.30,
+        )
+        assertEquals(32.0, resolveReturnToZone(job).miles, 0.001)
+        assertEquals(44, resolveReturnToZone(job).minutes)
+        assertEquals(69, computeFormulaScore(job, 0.30))
+        val gross = computeOfferEarnings(job)
+        assertEquals(94.45, gross.poundsPerHour!!, 0.02)
+        assertEquals(1.77, gross.poundsPerMile!!, 0.02)
+    }
+
+    @Test
     fun pickup_outside_london_does_not_add_return() {
         val job = ride(85.0, 10, 100, 2.0, 78.0).copy(
             pickup_address_postcode = "SN2",

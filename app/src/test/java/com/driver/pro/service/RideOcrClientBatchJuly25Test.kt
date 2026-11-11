@@ -2,6 +2,7 @@ package com.driver.pro.service
 
 import com.driver.pro.network.validateRideBeforeScoring
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -48,6 +49,32 @@ class RideOcrClientBatchJuly25Test {
         assertEquals(4.93, ride.rating, 0.001)
         assertEquals("CR0", ride.pickup_address_postcode)
         assertEquals("EC2M", ride.dropoff_address_postcode)
+    }
+
+    @Test
+    fun short_hop_4_96_stays_4_96_when_card_shows_1hr_badge() {
+        val text = """
+            Electric
+            £4.96
+            ★ 4.91 Verified
+            £0.30 est. holiday entitlement included
+            5 min (1.2 mi)
+            64 Putney Bridge Rd, London, SW18
+            1 HR
+            9 mins (2.6 mi)
+            5 Roehampton Cl, London, SW15 5LU
+            Match
+        """.trimIndent()
+        assertFalse(textHasLongTripDuration(text))
+        val ride = fillMissingTripMetrics(text, parseRideInfo(text, null))
+        assertEquals(4.96, ride.price, 0.001)
+        assertEquals(4.91, ride.rating, 0.001)
+        assertEquals(5, ride.pickup_time_minutes)
+        assertEquals(9, ride.trip_time_minutes)
+        assertEquals(1.2, ride.pickup_distance_value!!, 0.05)
+        assertEquals(2.6, ride.trip_distance_value!!, 0.05)
+        assertEquals("SW18", ride.pickup_address_postcode)
+        assertEquals("SW15", ride.dropoff_address_postcode)
     }
 
     @Test

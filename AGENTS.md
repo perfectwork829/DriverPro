@@ -17,7 +17,7 @@ Read **`HANDOFF.md`** first. It is the current status for a new Cursor session.
   3. add rating points (4.51–5.00 → 10 … 1.00–1.50 → 3)
   4. subtract pickup postcode hour points, add drop postcode hour points
 - **A** (return miles) and **B** (return minutes) come from the drop postcode **KODY** row only. Do not guess. Intra-London is 0 unless the sheet has values.
-- Buffer is **4 minutes**. London-start jobs only for return-to-zone.
+- Buffer is **4 minutes**. Return A/B only when the pickup is still inside the working zone: its own KODY return is 0 (every TfL district, plus SL, SG and WD). A pickup that already has return miles does not add the drop's A/B.
 - Hour table source of truth: `KodyTable.kt` imported from `C:\Users\Admin\Downloads\KODY.xlsx` via `scripts/import_kody.py`. Event uplifts (`kodyEventUplifts`) sit on top and are **empty** until an overlay is set.
 - History must **not** show the formula tape (`43+10 -8 +8 = 53`), `History (v…)`, **Show raw OCR**, or **Copy raw OCR**. Score number and Uber £/h £/mi stay. Unscored orders (Uber glitch / missing postcode) **do** show, as a plain card: ID, time, price/rating, £/h £/mi — no Pickup/Drop/Score lines (client 9 Nov 2026).
 - Licence city list: **London only**. Label is `London`, not `London (city)`.

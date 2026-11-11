@@ -340,6 +340,27 @@ fun extractPrice(text: String): List<Double> {
     return amounts
 }
 
+/**
+ * Hour-plus offer, so a £3–£4.99 read can be a dropped tens digit (£3.74 → £37.40).
+ * "1 hr 5 min" and "Long trip" count. A lone "1 HR" label above a short leg does not.
+ */
+internal fun textHasLongTripDuration(text: String): Boolean {
+    if (Regex("""\b(?:60\+\s*min|Long trip)\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
+        return true
+    }
+    if (Regex("""\b([6-9]\d|[1-9]\d{2})\s*mins?\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
+        return true
+    }
+    if (Regex(
+            """\b1[ \t]*hrs?[ \t]+(?:\d{1,2}[ \t]*mins?\b|\([ \t]*\d)""",
+            RegexOption.IGNORE_CASE,
+        ).containsMatchIn(text)
+    ) {
+        return true
+    }
+    return extractTripLegPairsInOrder(text).any { it.first >= 60 }
+}
+
 /** Best-effort fare from OCR — prefers main £ amount, then large standalone decimals (e.g. 42.47). */
 fun extractBestPrice(text: String): Double {
     val text = stripOverlayEarnings(text)
@@ -435,14 +456,9 @@ fun extractBestPrice(text: String): Double {
             val v = "${m.groupValues[1]}.${m.groupValues[2]}".toDoubleOrNull()
             if (v != null && v in 8.0..80.0) return v
         }
-        // £37.41 OCR'd as £3.74 on long XL trips — tens digit dropped.
-        val longTrip = Regex(
-            """\b(?:1\s*hr|60\+\s*min|Long trip)\b""",
-            RegexOption.IGNORE_CASE,
-        ).containsMatchIn(text) ||
-            Regex("""\b([6-9]\d|[1-9]\d{2})\s*mins?\b""", RegexOption.IGNORE_CASE)
-                .containsMatchIn(text)
-        if (longTrip && lowPound in 3.0..4.99) {
+        // £37.41 OCR'd as £3.74 on a real hour-plus trip — tens digit dropped.
+        // A bare "1 HR" badge on a short hop (5 min + 9 min, £4.96) is not that trip.
+        if (textHasLongTripDuration(text) && lowPound in 3.0..4.99) {
             val timesTen = lowPound * 10.0
             if (timesTen in 20.0..80.0) return timesTen
             Regex("""(?m)(?<![\d.])([2-4][0-9])[.,](\d{2})(?![\d.])""").find(text)?.let { m ->

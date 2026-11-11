@@ -3,10 +3,13 @@ package com.driver.pro.utils
 import com.driver.pro.RideRequest
 
 /**
- * Return-to-zone (A miles, B minutes) for a London-start job that drops outside TfL.
+ * Return-to-zone (A miles, B minutes) for a job that starts inside the working
+ * zone and drops outside it.
  *
- * A/B come from the drop postcode sheet row only. Intra-London and missing
- * rows stay 0 — do not guess. Pickup outside TfL London is not a London job.
+ * A/B come from the drop postcode sheet row only. Intra-zone and missing rows
+ * stay 0 — do not guess. A start is inside the zone when that pickup row's own
+ * return is 0 (every TfL district, plus SL, SG and WD on the current sheet).
+ * A pickup that already has return miles is not a zone start.
  */
 data class ReturnToZone(
     val miles: Double,
@@ -39,6 +42,20 @@ fun isTflLondonPostcode(raw: String?): Boolean {
     return area in TFL_LONDON_POSTCODE_AREAS
 }
 
+/**
+ * True when the pickup is already somewhere the sheet does not send the driver
+ * home from. Every TfL row is 0. SL, SG and WD are 0 as well, so a Slough
+ * pickup that drops outside (SL2 → OX26) still takes the drop row's A/B.
+ * A pickup with its own return miles (SN2) is already outside and adds nothing.
+ */
+fun isLondonStartPostcode(raw: String?): Boolean {
+    val row = lookupPostcodeScoreRow(raw)
+    if (row != null) {
+        return row.returnMiles <= 0.0 && row.returnMinutes <= 0
+    }
+    return isTflLondonPostcode(raw)
+}
+
 fun resolveReturnToZone(
     pickupPostcode: String?,
     dropoffPostcode: String?,
@@ -46,7 +63,7 @@ fun resolveReturnToZone(
     tripMinutes: Int? = null,
     table: Map<String, ReturnToZone> = emptyMap(),
 ): ReturnToZone {
-    if (!isTflLondonPostcode(pickupPostcode)) return ReturnToZone.NONE
+    if (!isLondonStartPostcode(pickupPostcode)) return ReturnToZone.NONE
     if (dropoffPostcode.isNullOrBlank()) return ReturnToZone.NONE
     val row = lookupPostcodeScoreRow(dropoffPostcode)
     if (row != null) {

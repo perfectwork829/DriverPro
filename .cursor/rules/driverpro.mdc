@@ -11,7 +11,7 @@ This is the Android app **I drive smart** (`com.driver.pro`). Read `HANDOFF.md` 
 - No APK/AAB, commit, or push unless the user asks.
 - Do not over-claim fixes. Scoring ≠ OCR ≠ overlay chrome.
 - Start-screen cost per mile drives the formula. Overlay £/h and £/mi remain Uber gross.
-- Formula: net £/h = [Y−(C+D+A)×cost]×60/(E+F+B+4); ceil(£/h/0.50); plus rating; minus pickup hour points; plus drop hour points. A/B from KODY drop row only. Buffer 4 minutes. London-start only.
+- Formula: net £/h = [Y−(C+D+A)×cost]×60/(E+F+B+4); ceil(£/h/0.50); plus rating; minus pickup hour points; plus drop hour points. A/B from KODY drop row only. Buffer 4 minutes. Add A/B only when the pickup row's own return is 0 (TfL, plus SL, SG, WD).
 - Do not show formula breakdown or app version on History.
 - Licence dropdown: London only, no “(city)”.
 - Bump versionCode and versionName for client-visible changes.
