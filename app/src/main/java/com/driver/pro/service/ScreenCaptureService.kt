@@ -36,14 +36,15 @@ import android.provider.MediaStore
 import com.driver.pro.RideRequest
 import com.driver.pro.getToken
 import com.driver.pro.getOperatingCostPerMile
-import com.driver.pro.decideRideFromScore
-import com.driver.pro.getScoreThresholds
+import com.driver.pro.decideRideFromFilters
+import com.driver.pro.getRideFilterThresholds
 import com.driver.pro.network.calculateRideRequest
 import com.driver.pro.network.logRideRequestPayload
 import com.driver.pro.network.rideRequestHttpBody
 import com.driver.pro.network.validateRideBeforeScoring
 import com.driver.pro.saveNewRequest
 import com.driver.pro.utils.computeFormulaScore
+import com.driver.pro.utils.computeOfferEarnings
 import com.driver.pro.utils.formatLiveOfferOverlay
 import com.driver.pro.utils.promoteTruncatedRideScore
 import com.google.mlkit.vision.text.Text
@@ -2562,9 +2563,13 @@ class ScreenCaptureService : Service() {
                         val restoredServer = promoteTruncatedRideScore(scored.final_score, ride)
                         val score = formulaScore ?: restoredServer ?: scored.final_score
                         val serverDecision = scored.acceptedOrRejected
-                        val decision = decideRideFromScore(
+                        val offerRates = computeOfferEarnings(ride)
+                        val decision = decideRideFromFilters(
                             localScore = formulaScore,
-                            thresholds = getScoreThresholds(applicationContext),
+                            price = ride.price,
+                            rating = ride.rating,
+                            poundsPerMile = offerRates.poundsPerMile,
+                            thresholds = getRideFilterThresholds(applicationContext),
                             serverDecision = serverDecision,
                         )
                         val scoredForUi = scored.copy(

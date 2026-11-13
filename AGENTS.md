@@ -21,6 +21,7 @@ Read **`HANDOFF.md`** first. It is the current status for a new Cursor session.
 - Hour table source of truth: `KodyTable.kt` imported from `C:\Users\Admin\Downloads\KODY.xlsx` via `scripts/import_kody.py`. Event uplifts (`kodyEventUplifts`) sit on top and are **empty** until an overlay is set.
 - History must **not** show the formula tape (`43+10 -8 +8 = 53`), `History (v…)`, **Show raw OCR**, or **Copy raw OCR**. Score number and Uber £/h £/mi stay. Unscored orders (Uber glitch / missing postcode) **do** show, as a plain card: ID, time, price/rating, £/h £/mi — no Pickup/Drop/Score lines (client 9 Nov 2026).
 - Licence city list: **London only**. Label is `London`, not `London (city)`.
+- Accept/reject uses every enabled Settings filter on-device. If one says Accept and another says Reject, take **no action**.
 - Bump `versionCode` / `versionName` in `app/build.gradle.kts` for each client-visible change.
 
 ## Layout (tabs)

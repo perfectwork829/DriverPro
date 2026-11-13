@@ -7,6 +7,7 @@ import androidx.core.content.edit
 import com.driver.pro.network.User
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlin.math.roundToInt
 import kotlinx.serialization.Serializable
 
 
@@ -100,9 +101,32 @@ fun persistSessionOperatingCost(context: Context?, apiPrice: Double?): Double {
 /** Settings-screen SCORE band, cached so the capture service decides from the local score. */
 data class ScoreThresholds(val enabled: Boolean, val reject: Int, val accept: Int)
 
+/** One Settings range slider: Reject < reject, Accept > accept. */
+data class RangeFilterThresholds(val enabled: Boolean, val reject: Float, val accept: Float)
+
+/**
+ * All Settings filters cached for the capture service.
+ * Score / Price / Price-per-mile use Reject < X / Accept > Y.
+ * Customer rating uses a single threshold (Reject < X, Accept > X).
+ */
+data class RideFilterThresholds(
+    val score: RangeFilterThresholds? = null,
+    val price: RangeFilterThresholds? = null,
+    val rate: RangeFilterThresholds? = null,
+    val pricePerMile: RangeFilterThresholds? = null,
+)
+
 private const val KEY_SCORE_ENABLED = "SCORE_FILTER_ENABLED"
 private const val KEY_SCORE_REJECT = "SCORE_FILTER_REJECT"
 private const val KEY_SCORE_ACCEPT = "SCORE_FILTER_ACCEPT"
+private const val KEY_PRICE_ENABLED = "PRICE_FILTER_ENABLED"
+private const val KEY_PRICE_REJECT = "PRICE_FILTER_REJECT"
+private const val KEY_PRICE_ACCEPT = "PRICE_FILTER_ACCEPT"
+private const val KEY_RATE_ENABLED = "RATE_FILTER_ENABLED"
+private const val KEY_RATE_ACCEPT = "RATE_FILTER_ACCEPT"
+private const val KEY_PPM_ENABLED = "PPM_FILTER_ENABLED"
+private const val KEY_PPM_REJECT = "PPM_FILTER_REJECT"
+private const val KEY_PPM_ACCEPT = "PPM_FILTER_ACCEPT"
 
 fun saveScoreThresholds(context: Context?, enabled: Boolean, reject: Int, accept: Int) {
     if (context == null) return
@@ -110,6 +134,32 @@ fun saveScoreThresholds(context: Context?, enabled: Boolean, reject: Int, accept
         putBoolean(KEY_SCORE_ENABLED, enabled)
         putInt(KEY_SCORE_REJECT, reject)
         putInt(KEY_SCORE_ACCEPT, accept)
+    }
+}
+
+/** Persist every Settings filter so accept/reject can resolve conflicts on-device. */
+fun saveRideFilterThresholds(context: Context?, thresholds: RideFilterThresholds) {
+    if (context == null) return
+    context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit(commit = true) {
+        thresholds.score?.let {
+            putBoolean(KEY_SCORE_ENABLED, it.enabled)
+            putInt(KEY_SCORE_REJECT, it.reject.roundToInt())
+            putInt(KEY_SCORE_ACCEPT, it.accept.roundToInt())
+        }
+        thresholds.price?.let {
+            putBoolean(KEY_PRICE_ENABLED, it.enabled)
+            putFloat(KEY_PRICE_REJECT, it.reject)
+            putFloat(KEY_PRICE_ACCEPT, it.accept)
+        }
+        thresholds.rate?.let {
+            putBoolean(KEY_RATE_ENABLED, it.enabled)
+            putFloat(KEY_RATE_ACCEPT, it.accept)
+        }
+        thresholds.pricePerMile?.let {
+            putBoolean(KEY_PPM_ENABLED, it.enabled)
+            putFloat(KEY_PPM_REJECT, it.reject)
+            putFloat(KEY_PPM_ACCEPT, it.accept)
+        }
     }
 }
 
@@ -125,6 +175,114 @@ fun getScoreThresholds(context: Context?): ScoreThresholds? {
     )
 }
 
+/** Null until Settings has cached filters at least once (score-only cache still works). */
+fun getRideFilterThresholds(context: Context?): RideFilterThresholds? {
+    if (context == null) return null
+    val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+    val score = if (prefs.contains(KEY_SCORE_ACCEPT)) {
+        RangeFilterThresholds(
+            enabled = prefs.getBoolean(KEY_SCORE_ENABLED, true),
+            reject = prefs.getInt(KEY_SCORE_REJECT, 0).toFloat(),
+            accept = prefs.getInt(KEY_SCORE_ACCEPT, 0).toFloat(),
+        )
+    } else {
+        null
+    }
+    val price = if (prefs.contains(KEY_PRICE_ACCEPT)) {
+        RangeFilterThresholds(
+            enabled = prefs.getBoolean(KEY_PRICE_ENABLED, true),
+            reject = prefs.getFloat(KEY_PRICE_REJECT, 0f),
+            accept = prefs.getFloat(KEY_PRICE_ACCEPT, 0f),
+        )
+    } else {
+        null
+    }
+    val rate = if (prefs.contains(KEY_RATE_ACCEPT)) {
+        val accept = prefs.getFloat(KEY_RATE_ACCEPT, 3f)
+        RangeFilterThresholds(
+            enabled = prefs.getBoolean(KEY_RATE_ENABLED, true),
+            reject = accept,
+            accept = accept,
+        )
+    } else {
+        null
+    }
+    val ppm = if (prefs.contains(KEY_PPM_ACCEPT)) {
+        RangeFilterThresholds(
+            enabled = prefs.getBoolean(KEY_PPM_ENABLED, true),
+            reject = prefs.getFloat(KEY_PPM_REJECT, 0f),
+            accept = prefs.getFloat(KEY_PPM_ACCEPT, 0f),
+        )
+    } else {
+        null
+    }
+    if (score == null && price == null && rate == null && ppm == null) return null
+    return RideFilterThresholds(score = score, price = price, rate = rate, pricePerMile = ppm)
+}
+
+/** Reject < reject, Accept > accept; otherwise undecided. */
+fun rangeFilterDecision(value: Double, reject: Float, accept: Float): Int = when {
+    value > accept -> 1
+    value < reject -> -1
+    else -> 0
+}
+
+/**
+ * Merge per-filter votes. Accept + Reject from different filters → no action (0).
+ * Empty list means no enabled local filter voted.
+ */
+fun combineFilterDecisions(decisions: List<Int>): Int? {
+    if (decisions.isEmpty()) return null
+    val hasAccept = decisions.any { it == 1 }
+    val hasReject = decisions.any { it == -1 }
+    if (hasAccept && hasReject) return 0
+    if (hasAccept) return 1
+    if (hasReject) return -1
+    return 0
+}
+
+/**
+ * Accept (1) / reject (-1) / undecided (0) using every enabled Settings filter.
+ *
+ * Score, Price, Rating, and Price-per-mile each vote. If one says Accept and another
+ * says Reject, the app takes no action. A single enabled filter keeps the old behaviour.
+ */
+fun decideRideFromFilters(
+    localScore: Int?,
+    price: Double?,
+    rating: Double?,
+    poundsPerMile: Double?,
+    thresholds: RideFilterThresholds?,
+    serverDecision: Int,
+): Int {
+    if (localScore != null && localScore < 0) return 0 // banner only; avoid triple-fire dismiss taps
+    val votes = mutableListOf<Int>()
+    thresholds?.score?.takeIf { it.enabled }?.let { band ->
+        if (localScore != null) {
+            votes.add(rangeFilterDecision(localScore.toDouble(), band.reject, band.accept))
+        }
+    }
+    thresholds?.price?.takeIf { it.enabled }?.let { band ->
+        if (price != null && price >= 1.0) {
+            votes.add(rangeFilterDecision(price, band.reject, band.accept))
+        }
+    }
+    thresholds?.rate?.takeIf { it.enabled }?.let { band ->
+        if (rating != null && rating > 0.0) {
+            votes.add(rangeFilterDecision(rating, band.reject, band.accept))
+        }
+    }
+    thresholds?.pricePerMile?.takeIf { it.enabled }?.let { band ->
+        if (poundsPerMile != null && poundsPerMile > 0.0) {
+            votes.add(rangeFilterDecision(poundsPerMile, band.reject, band.accept))
+        }
+    }
+    combineFilterDecisions(votes)?.let { return it }
+    // No local filter voted: never auto-accept a weak local score on the server's word alone.
+    if (serverDecision == 1 && localScore != null && localScore < 70) return 0
+    return serverDecision
+}
+
 /**
  * Accept (1) / reject (-1) / undecided (0) for a scored offer.
  *
@@ -137,17 +295,23 @@ fun decideRideFromScore(
     thresholds: ScoreThresholds?,
     serverDecision: Int,
 ): Int {
-    if (localScore != null && localScore < 0) return 0 // banner only; avoid triple-fire dismiss taps
-    if (localScore != null && thresholds != null && thresholds.enabled) {
-        return when {
-            localScore > thresholds.accept -> 1
-            localScore < thresholds.reject -> -1
-            else -> 0
-        }
+    val filters = thresholds?.let {
+        RideFilterThresholds(
+            score = RangeFilterThresholds(
+                enabled = it.enabled,
+                reject = it.reject.toFloat(),
+                accept = it.accept.toFloat(),
+            ),
+        )
     }
-    // No local band: never auto-accept a weak local score on the server's word alone.
-    if (serverDecision == 1 && localScore != null && localScore < 70) return 0
-    return serverDecision
+    return decideRideFromFilters(
+        localScore = localScore,
+        price = null,
+        rating = null,
+        poundsPerMile = null,
+        thresholds = filters,
+        serverDecision = serverDecision,
+    )
 }
 
 fun saveOperatingCostPerMile(context: Context?, pounds: Double) {

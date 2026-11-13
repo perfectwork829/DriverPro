@@ -12,7 +12,7 @@ For a **new laptop / new Cursor or Claude Code session**. Clone or copy this who
 
 | What | Value |
 |---|---|
-| `app/build.gradle.kts` (working copy) | `versionCode = 73`, `versionName = "1.73"` |
+| `app/build.gradle.kts` (working copy) | `versionCode = 74`, `versionName = "1.74"` |
 | Last **pushed** commit | `e4005d5` `fix: fixed 11.08 feedback`, which is **1.70** (`main` is level with `origin/main`) |
 | **Local uncommitted** (10 Nov 2026) | **1.72**: 1.71 slider and History changes, plus return miles on zone-edge pickups (SL2 → OX26) |
 
@@ -60,7 +60,7 @@ Sideload APKs are signed with the **debug keystore** (`app/build.gradle.kts`), n
 4. Hour table: `KodyTable.kt`, imported from `C:\Users\Admin\Downloads\KODY.xlsx` via `python scripts/import_kody.py`. Event uplifts (`kodyEventUplifts`) are **empty** until the client sends event postcodes and hours.
 5. The overlay **£/h** and **£/mi** are Uber **gross**, not net of cost.
 6. The History score is the local `displayedFormulaScore`, not the API value. The server drops the hundreds digit (118 → 18).
-7. **Accept/reject decision (1.70):** made locally by `decideRideFromScore(localScore, getScoreThresholds(), serverDecision)`. With the Score filter on, the job is accepted if score > accept, rejected if score < reject, and left alone otherwise. With the filter off it falls back to the server decision, but a server "accept" with a local score under 70 is ignored. Thresholds are cached in `app_prefs` by `SettingsScreen` (`saveScoreThresholds`).
+7. **Accept/reject decision (1.74):** made locally by `decideRideFromFilters(...)` using every enabled Settings filter (Score, Price, Rating, Price per mile). Each filter votes Accept / Reject / neither. If any votes Accept and another votes Reject, the app takes **no action**. One filter alone keeps the old Reject < X / Accept > Y behaviour. With no local filter voting it falls back to the server decision, but a server "accept" with a local score under 70 is ignored. Thresholds are cached in `app_prefs` by `SettingsScreen` (`saveRideFilterThresholds`).
 8. **History:**
    - Title is `History`, with no version number.
    - Never show the formula tape (`43+10 -8 +8 = 53`), **Show raw OCR** or **Copy raw OCR**.

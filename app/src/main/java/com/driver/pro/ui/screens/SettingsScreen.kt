@@ -31,8 +31,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.driver.pro.network.ApiService
-import com.driver.pro.saveScoreThresholds
-import kotlin.math.roundToInt
+import com.driver.pro.RangeFilterThresholds
+import com.driver.pro.RideFilterThresholds
+import com.driver.pro.saveRideFilterThresholds
 import com.driver.pro.network.SessionManager
 import com.driver.pro.network.SettingField
 import com.driver.pro.network.UserSettingsResponse
@@ -212,6 +213,22 @@ fun SettingsScreen(
     var priceMileAccept by remember { mutableStateOf(0f) }
     var priceMileEnabled by remember { mutableStateOf(true) }
 
+    fun cacheRideFiltersLocally() {
+        saveRideFilterThresholds(
+            context,
+            RideFilterThresholds(
+                score = RangeFilterThresholds(scoreEnabled, scoreReject, scoreAccept),
+                price = RangeFilterThresholds(priceEnabled, priceReject, priceAccept),
+                rate = RangeFilterThresholds(rateEnabled, rateAccept, rateAccept),
+                pricePerMile = RangeFilterThresholds(
+                    priceMileEnabled,
+                    priceMileReject,
+                    priceMileAccept,
+                ),
+            ),
+        )
+    }
+
     // Load current settings
     LaunchedEffect(Unit) {
         try {
@@ -223,12 +240,6 @@ fun SettingsScreen(
                     scoreReject = data.score?.reject?.toFloat() ?: 0f
                     scoreAccept = data.score?.accept?.toFloat() ?: 0f
                     scoreEnabled = data.score?.enabled ?: true
-                    saveScoreThresholds(
-                        context,
-                        scoreEnabled,
-                        scoreReject.roundToInt(),
-                        scoreAccept.roundToInt(),
-                    )
 
                     Log.d("settting resposne", scoreReject.toString())
                     Log.d("settting resposne", scoreAccept.toString())
@@ -246,6 +257,7 @@ fun SettingsScreen(
                     priceMileAccept = (data.price_per_mile?.accept?.toFloat() ?: 0f)
                         .coerceIn(PRICE_PER_MILE_MIN, PRICE_PER_MILE_MAX)
                     priceMileEnabled = data.price_per_mile?.enabled ?: true
+                    cacheRideFiltersLocally()
                 }
             } else {
                 Toast.makeText(context, "Failed to load settings", Toast.LENGTH_SHORT).show()
@@ -258,7 +270,7 @@ fun SettingsScreen(
 
     // --- Helper to update API ---
     fun updateSettings() {
-        saveScoreThresholds(context, scoreEnabled, scoreReject.roundToInt(), scoreAccept.roundToInt())
+        cacheRideFiltersLocally()
         coroutineScope.launch {
             try {
                 val payload = UserSettingsResponse(
