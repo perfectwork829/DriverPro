@@ -28,6 +28,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import com.driver.pro.network.ApiService
 import com.driver.pro.network.SessionManager
+import com.driver.pro.savePostcodeFilterEnabled
 import com.driver.pro.utils.isUkMapRegionId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -175,6 +176,7 @@ fun PostcodeScreen(
                 apiService.getPostcodeSetting(userId)
             }
             enabled = response.enable
+            savePostcodeFilterEnabled(context, response.enable)
             WebViewHolder.applyInteractionState(webView, response.enable)
         } catch (e: HttpException) {
             Log.e("API", "Failed loading postcode setting ${e.message()}")
@@ -259,6 +261,7 @@ fun PostcodeScreen(
                             )
                         }
                         enabled = response.enable
+                        savePostcodeFilterEnabled(context, response.enable)
                     } catch (e: Exception) {
                         Log.e("API", "Failed updating postcode enable: ${e.message}", e)
                         try {
@@ -266,6 +269,7 @@ fun PostcodeScreen(
                                 apiService.getPostcodeSetting(userId)
                             }
                             enabled = r.enable
+                            savePostcodeFilterEnabled(context, r.enable)
                         } catch (e2: Exception) {
                             Log.e("API", "Failed reloading postcode setting: ${e2.message}")
                         }

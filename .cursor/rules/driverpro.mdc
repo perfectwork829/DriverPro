@@ -14,6 +14,6 @@ This is the Android app **I drive smart** (`com.driver.pro`). Read `HANDOFF.md` 
 - Formula: net £/h = [Y−(C+D+A)×cost]×60/(E+F+B+4); ceil(£/h/0.50); plus rating; minus pickup hour points; plus drop hour points. A/B from KODY drop row only. Buffer 4 minutes. Add A/B only when the pickup row's own return is 0 (TfL, plus SL, SG, WD).
 - Do not show formula breakdown or app version on History.
 - Licence dropdown: London only, no “(city)”.
-- Accept/reject uses every enabled Settings filter. Accept + Reject from different filters = no action.
+- Accept/reject uses every enabled Settings filter plus the Postcode map filter. Accept + Reject from different filters = no action.
 - Bump versionCode and versionName for client-visible changes.
 - KODY.xlsx is the hour/A/B table. Event uplifts are extra and currently empty.

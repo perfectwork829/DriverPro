@@ -2571,6 +2571,8 @@ class ScreenCaptureService : Service() {
                             poundsPerMile = offerRates.poundsPerMile,
                             thresholds = getRideFilterThresholds(applicationContext),
                             serverDecision = serverDecision,
+                            pickupPostcode = ride.pickup_address_postcode,
+                            dropPostcode = ride.dropoff_address_postcode,
                         )
                         val scoredForUi = scored.copy(
                             final_score = score,

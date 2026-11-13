@@ -2,6 +2,7 @@ package com.driver.pro.ui.screens
 
 import android.util.Log
 import androidx.compose.foundation.background
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,8 +43,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import com.driver.pro.mergePostcodeFilterStatuses
 import com.driver.pro.network.ApiService
 import com.driver.pro.network.PostcodeResponse
+import com.driver.pro.savePostcodeFilterStatus
 import com.driver.pro.utils.defaultOutwardCodesForRegion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -70,6 +73,7 @@ fun PostcodeDetailScreen(
     userId: Int,
     apiService: ApiService,
 ) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val mapRegion = remember(postcode) { postcode.trim().uppercase() }
     val sections = remember(mapRegion) { sectionsForMapRegion(mapRegion) }
@@ -104,6 +108,10 @@ fun PostcodeDetailScreen(
             userPostcodes.clear()
             userPostcodes.addAll(
                 userData.map { UserPostcode(full_code = it.full_code, status = it.status) },
+            )
+            mergePostcodeFilterStatuses(
+                context,
+                userData.associate { it.full_code to it.status },
             )
             if (fromApi.isEmpty() && list.isNotEmpty()) {
                 loadMessage = "Showing default codes (server list was empty)."
@@ -241,6 +249,7 @@ fun PostcodeDetailScreen(
                                         } else {
                                             userPostcodes.add(UserPostcode(code, newStatus))
                                         }
+                                        savePostcodeFilterStatus(context, code, newStatus)
                                         coroutineScope.launch(Dispatchers.IO) {
                                             try {
                                                 apiService.updateUserPostcode(

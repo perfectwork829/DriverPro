@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import com.driver.pro.network.User
+import com.driver.pro.utils.ukOutwardCode
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlin.math.roundToInt
@@ -105,15 +106,26 @@ data class ScoreThresholds(val enabled: Boolean, val reject: Int, val accept: In
 data class RangeFilterThresholds(val enabled: Boolean, val reject: Float, val accept: Float)
 
 /**
- * All Settings filters cached for the capture service.
+ * Map-tab postcode filter: master switch + per-district status
+ * (`accept` / `reject` / `decide`).
+ */
+data class PostcodeFilterState(
+    val enabled: Boolean,
+    val statuses: Map<String, String> = emptyMap(),
+)
+
+/**
+ * All filters cached for the capture service.
  * Score / Price / Price-per-mile use Reject < X / Accept > Y.
  * Customer rating uses a single threshold (Reject < X, Accept > X).
+ * Postcode uses Accept / Reject / Decide per district when the map switch is on.
  */
 data class RideFilterThresholds(
     val score: RangeFilterThresholds? = null,
     val price: RangeFilterThresholds? = null,
     val rate: RangeFilterThresholds? = null,
     val pricePerMile: RangeFilterThresholds? = null,
+    val postcode: PostcodeFilterState? = null,
 )
 
 private const val KEY_SCORE_ENABLED = "SCORE_FILTER_ENABLED"
@@ -127,6 +139,8 @@ private const val KEY_RATE_ACCEPT = "RATE_FILTER_ACCEPT"
 private const val KEY_PPM_ENABLED = "PPM_FILTER_ENABLED"
 private const val KEY_PPM_REJECT = "PPM_FILTER_REJECT"
 private const val KEY_PPM_ACCEPT = "PPM_FILTER_ACCEPT"
+private const val KEY_POSTCODE_FILTER_ENABLED = "POSTCODE_FILTER_ENABLED"
+private const val KEY_POSTCODE_STATUSES_JSON = "POSTCODE_FILTER_STATUSES_JSON"
 
 fun saveScoreThresholds(context: Context?, enabled: Boolean, reject: Int, accept: Int) {
     if (context == null) return
@@ -216,8 +230,71 @@ fun getRideFilterThresholds(context: Context?): RideFilterThresholds? {
     } else {
         null
     }
-    if (score == null && price == null && rate == null && ppm == null) return null
-    return RideFilterThresholds(score = score, price = price, rate = rate, pricePerMile = ppm)
+    val postcode = getPostcodeFilterState(context)
+    if (score == null && price == null && rate == null && ppm == null && postcode == null) {
+        return null
+    }
+    return RideFilterThresholds(
+        score = score,
+        price = price,
+        rate = rate,
+        pricePerMile = ppm,
+        postcode = postcode,
+    )
+}
+
+fun savePostcodeFilterEnabled(context: Context?, enabled: Boolean) {
+    if (context == null) return
+    context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE).edit(commit = true) {
+        putBoolean(KEY_POSTCODE_FILTER_ENABLED, enabled)
+    }
+}
+
+fun getPostcodeFilterState(context: Context?): PostcodeFilterState? {
+    if (context == null) return null
+    val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+    if (!prefs.contains(KEY_POSTCODE_FILTER_ENABLED) && !prefs.contains(KEY_POSTCODE_STATUSES_JSON)) {
+        return null
+    }
+    return PostcodeFilterState(
+        enabled = prefs.getBoolean(KEY_POSTCODE_FILTER_ENABLED, false),
+        statuses = readPostcodeStatuses(prefs),
+    )
+}
+
+/** Merge statuses from a map-area load or a single tap (keys are outward codes). */
+fun mergePostcodeFilterStatuses(context: Context?, updates: Map<String, String>) {
+    if (context == null || updates.isEmpty()) return
+    val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+    val merged = readPostcodeStatuses(prefs).toMutableMap()
+    for ((code, status) in updates) {
+        val key = code.trim().uppercase()
+        if (key.isEmpty()) continue
+        val normalized = status.trim().lowercase()
+        if (normalized == "decide") {
+            merged.remove(key)
+        } else {
+            merged[key] = normalized
+        }
+    }
+    prefs.edit(commit = true) {
+        putString(KEY_POSTCODE_STATUSES_JSON, Gson().toJson(merged))
+    }
+}
+
+fun savePostcodeFilterStatus(context: Context?, code: String, status: String) {
+    mergePostcodeFilterStatuses(context, mapOf(code to status))
+}
+
+private fun readPostcodeStatuses(prefs: SharedPreferences): Map<String, String> {
+    val raw = prefs.getString(KEY_POSTCODE_STATUSES_JSON, null) ?: return emptyMap()
+    return runCatching {
+        val type = object : TypeToken<Map<String, String>>() {}.type
+        val parsed: Map<String, String> = Gson().fromJson(raw, type) ?: emptyMap()
+        parsed.mapKeys { it.key.trim().uppercase() }
+            .mapValues { it.value.trim().lowercase() }
+            .filterValues { it == "accept" || it == "reject" }
+    }.getOrDefault(emptyMap())
 }
 
 /** Reject < reject, Accept > accept; otherwise undecided. */
@@ -225,6 +302,35 @@ fun rangeFilterDecision(value: Double, reject: Float, accept: Float): Int = when
     value > accept -> 1
     value < reject -> -1
     else -> 0
+}
+
+/**
+ * One vote from the map postcode filter for this ride.
+ * Pickup and drop each contribute Accept/Reject when set; Decide is ignored.
+ * Null = filter off or no configured status for this trip.
+ */
+fun postcodeFilterDecision(
+    pickupPostcode: String?,
+    dropPostcode: String?,
+    filter: PostcodeFilterState?,
+): Int? {
+    if (filter == null || !filter.enabled) return null
+    if (filter.statuses.isEmpty()) return null
+    fun voteFor(raw: String?): Int? {
+        val outward = ukOutwardCode(raw)?.uppercase() ?: return null
+        val status = filter.statuses[outward]
+            ?: filter.statuses.entries.firstOrNull {
+                it.key.equals(outward, ignoreCase = true)
+            }?.value
+            ?: return null
+        return when (status.lowercase()) {
+            "accept" -> 1
+            "reject" -> -1
+            else -> null
+        }
+    }
+    val votes = listOfNotNull(voteFor(pickupPostcode), voteFor(dropPostcode))
+    return combineFilterDecisions(votes)
 }
 
 /**
@@ -242,10 +348,11 @@ fun combineFilterDecisions(decisions: List<Int>): Int? {
 }
 
 /**
- * Accept (1) / reject (-1) / undecided (0) using every enabled Settings filter.
+ * Accept (1) / reject (-1) / undecided (0) using every enabled filter.
  *
- * Score, Price, Rating, and Price-per-mile each vote. If one says Accept and another
- * says Reject, the app takes no action. A single enabled filter keeps the old behaviour.
+ * Score, Price, Rating, Price-per-mile, and Postcode each vote. If one says Accept
+ * and another says Reject, the app takes no action. A single enabled filter keeps
+ * the old behaviour.
  */
 fun decideRideFromFilters(
     localScore: Int?,
@@ -254,6 +361,8 @@ fun decideRideFromFilters(
     poundsPerMile: Double?,
     thresholds: RideFilterThresholds?,
     serverDecision: Int,
+    pickupPostcode: String? = null,
+    dropPostcode: String? = null,
 ): Int {
     if (localScore != null && localScore < 0) return 0 // banner only; avoid triple-fire dismiss taps
     val votes = mutableListOf<Int>()
@@ -277,6 +386,7 @@ fun decideRideFromFilters(
             votes.add(rangeFilterDecision(poundsPerMile, band.reject, band.accept))
         }
     }
+    postcodeFilterDecision(pickupPostcode, dropPostcode, thresholds?.postcode)?.let { votes.add(it) }
     combineFilterDecisions(votes)?.let { return it }
     // No local filter voted: never auto-accept a weak local score on the server's word alone.
     if (serverDecision == 1 && localScore != null && localScore < 70) return 0

@@ -99,4 +99,67 @@ class RideFilterDecisionTest {
         assertEquals(0, combineFilterDecisions(listOf(0, 0)))
         assertEquals(null, combineFilterDecisions(emptyList()))
     }
+
+    @Test
+    fun score_middle_and_postcode_accept_accepts() {
+        val filters = RideFilterThresholds(
+            score = RangeFilterThresholds(enabled = true, reject = 12f, accept = 90f),
+            postcode = PostcodeFilterState(
+                enabled = true,
+                statuses = mapOf("OX26" to "accept"),
+            ),
+        )
+        assertEquals(
+            1,
+            decideRideFromFilters(
+                localScore = 69,
+                price = 72.41,
+                rating = 4.88,
+                poundsPerMile = 1.77,
+                thresholds = filters,
+                serverDecision = 0,
+                pickupPostcode = "SL2",
+                dropPostcode = "OX26",
+            ),
+        )
+    }
+
+    @Test
+    fun score_reject_and_postcode_accept_takes_no_action() {
+        val filters = RideFilterThresholds(
+            score = RangeFilterThresholds(enabled = true, reject = 90f, accept = 120f),
+            postcode = PostcodeFilterState(
+                enabled = true,
+                statuses = mapOf("N6" to "accept"),
+            ),
+        )
+        assertEquals(
+            0,
+            decideRideFromFilters(
+                localScore = 86,
+                price = 24.80,
+                rating = 4.80,
+                poundsPerMile = 2.0,
+                thresholds = filters,
+                serverDecision = -1,
+                pickupPostcode = "HA9",
+                dropPostcode = "N6",
+            ),
+        )
+    }
+
+    @Test
+    fun postcode_accept_and_postcode_reject_on_same_trip_takes_no_action() {
+        assertEquals(
+            0,
+            postcodeFilterDecision(
+                pickupPostcode = "HA9",
+                dropPostcode = "N6",
+                filter = PostcodeFilterState(
+                    enabled = true,
+                    statuses = mapOf("HA9" to "accept", "N6" to "reject"),
+                ),
+            ),
+        )
+    }
 }
